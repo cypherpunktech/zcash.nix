@@ -60,6 +60,31 @@ other direction either. The README's support table states what CI really built.
   Never `-m "..."`: backticks inside double quotes run as command substitution
   and silently eat words.
 
+## Things that bit us here, with the fix
+
+- **A build script shelling out to `git`.** zaino's `zaino-state/build.rs` stamps
+  the binary from `git rev-parse` unless its env vars are set. There is no git in
+  the sandbox and no `.git` in the source — it arrives as a tarball. Set the env
+  vars the build script documents, fed from `src.rev` so there is no second copy
+  of the revision to drift. Do **not** add `git` to `nativeBuildInputs`; that
+  makes the error disappear while leaving a build that depends on a host tool.
+  Read a new package's `build.rs` files before starting a long build.
+- **`include_str!` escaping a crate root in a git dependency.** Plain cargo checks
+  the whole repo out into `~/.cargo/git` so the path resolves; `fetchCargoVendor`
+  copies each git dependency as a bare crate directory, so it does not. See
+  `packages/zpay`. Any workaround for this must fail loudly once it is no longer
+  needed, or it becomes a permanent unexamined patch.
+- **Running several cargo vendors at once starves them all.** They share
+  `http-connections`; four in parallel sat for over an hour with no output while
+  each alone takes about ten minutes. Vendor one package at a time.
+- **`meta.platforms` blocks `nix build`**, and `nix flake check --all-systems`
+  forces every package's drvPath — so an unavailable package is an eval error,
+  not a skip. That is why `packages.<system>` is filtered by availability in
+  `flake.nix` and the overlay is not.
+- **A join derivation still needs `src`.** `packages/zallet` copies two builds
+  together and has nothing to unpack, but without `src` the staleness gate cannot
+  see what it is pinned to and the package goes silently unwatched.
+
 ## The updater must not fail closed
 
 `.github/workflows/update.yml` opens version-bump PRs and never auto-merges. On
