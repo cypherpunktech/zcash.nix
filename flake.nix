@@ -88,6 +88,12 @@
       # build user via whoami -- and that is fixed in the package, not here.
       reproducibleRustPlatform =
         pkgs:
+        let
+          # ld64's `-S`: emit no stabs. GNU ld spells --strip-debug the same
+          # way, which would be harmless here but is not what this flag is
+          # for, and on Linux the build dir is already constant. Darwin only.
+          noStabs = lib.optionalString pkgs.stdenv.hostPlatform.isDarwin " -C link-arg=-Wl,-S";
+        in
         pkgs.rustPlatform
         // {
           buildRustPackage =
@@ -96,7 +102,7 @@
               args
               // {
                 preBuild = ''
-                  export NIX_RUSTFLAGS="''${NIX_RUSTFLAGS:-} --remap-path-prefix=$NIX_BUILD_TOP=/build -C link-arg=-Wl,-S"
+                  export NIX_RUSTFLAGS="''${NIX_RUSTFLAGS:-} --remap-path-prefix=$NIX_BUILD_TOP=/build${noStabs}"
                   export NIX_CFLAGS_COMPILE="''${NIX_CFLAGS_COMPILE:-} -ffile-prefix-map=$NIX_BUILD_TOP=/build"
                 ''
                 + (args.preBuild or "");
