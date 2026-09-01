@@ -19,9 +19,15 @@ on:
   schedule:
     - cron: "23 6 * * 1"
 
+# Cancel a run only when a newer one tests the SAME thing. Pushing to a PR
+# supersedes its own previous run, so cancelling there saves runner time and
+# loses nothing. Consecutive pushes to main do not supersede each other: each
+# commit here adds a different package, and these builds take tens of minutes
+# from source, so cancelling one throws away the only evidence that the
+# previous package built on Linux. Learned by watching it happen to zebra.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   eval:
