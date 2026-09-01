@@ -26,6 +26,8 @@ self: _: {
       lightwalletd = {
         enable = true;
         insecureNoTLS = true;
+        rpcUser = "test";
+        rpcPassword = "test";
       };
       zallet = {
         enable = true;

@@ -15,7 +15,16 @@ self: _: {
     services.zcash.zebra = {
       enable = true;
       settings = {
-        network.network = "Regtest";
+        network = {
+          network = "Regtest";
+          # Empty seed lists: the VM has no network, and zebrad otherwise loops
+          # on seed-peer DNS forever and never binds RPC. See tests/zebra.nix
+          # for the full explanation.
+          initial_mainnet_peers = [ ];
+          initial_testnet_peers = [ ];
+          cache_dir = false;
+        };
+        state.ephemeral = true;
         rpc.listen_addr = "127.0.0.1:18232";
         rpc.enable_cookie_auth = false;
       };
@@ -28,6 +37,10 @@ self: _: {
       # module working as intended: without it the assertion refuses to build,
       # which is the whole reason the assertion exists.
       insecureNoTLS = true;
+      # lightwalletd requires a credential source or it exits at startup;
+      # zebra above runs with cookie auth off, so any pair works here.
+      rpcUser = "test";
+      rpcPassword = "test";
       extraArgs = [ "--no-backend-check" ];
     };
 

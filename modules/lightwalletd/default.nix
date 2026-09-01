@@ -53,10 +53,32 @@ in
       type = lib.types.nullOr lib.types.path;
       default = null;
       description = ''
-        Path to a `zcash.conf` to read RPC credentials from.
+        Path to a `zcash.conf` to read RPC credentials from. **Preferred.**
 
-        Prefer this over passing credentials as flags: everything in a unit's
-        ExecStart is world-readable through `systemctl cat` and `/proc`.
+        lightwalletd requires credentials from somewhere: with neither this nor
+        `rpcUser`/`rpcPassword` it exits immediately with
+        `required file ./zcash.conf does not exist`. Prefer this over the flags
+        below, because everything in a unit's ExecStart is readable by any
+        local user through `systemctl cat` and `/proc`.
+      '';
+    };
+
+    rpcUser = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "RPC username. Requires `rpcPassword`. Prefer `zcashConfPath`.";
+    };
+
+    rpcPassword = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = ''
+        RPC password, passed as a command-line flag.
+
+        This lands in the unit file and in the process's argv, both readable by
+        any local user. It exists because lightwalletd offers no
+        password-from-file flag, and it is documented rather than hidden. Use
+        `zcashConfPath` unless you have a reason not to.
       '';
     };
 
@@ -103,6 +125,18 @@ in
   config = lib.mkIf cfg.enable {
     assertions = [
       {
+        # Found by running it: without a credential source lightwalletd exits
+        # immediately with "required file ./zcash.conf does not exist", which
+        # under systemd is a restart loop and a unit that looks configured.
+        assertion = cfg.zcashConfPath != null || (cfg.rpcUser != null && cfg.rpcPassword != null);
+        message = ''
+          services.zcash.lightwalletd needs RPC credentials: set zcashConfPath
+          (preferred), or both rpcUser and rpcPassword. lightwalletd exits at
+          startup without them, looking for ./zcash.conf in a working directory
+          it cannot write to.
+        '';
+      }
+      {
         assertion = cfg.insecureNoTLS || (cfg.tls.certFile != null && cfg.tls.keyFile != null);
         message = ''
           services.zcash.lightwalletd needs either tls.certFile and tls.keyFile,
@@ -141,7 +175,15 @@ in
           ]
           ++ lib.optionals (cfg.zcashConfPath != null) [
             "--zcash-conf-path"
-            cfg.zcashConfPath
+            (toString cfg.zcashConfPath)
+          ]
+          ++ lib.optionals (cfg.rpcUser != null) [
+            "--rpcuser"
+            cfg.rpcUser
+          ]
+          ++ lib.optionals (cfg.rpcPassword != null) [
+            "--rpcpassword"
+            cfg.rpcPassword
           ]
           ++ lib.optionals cfg.insecureNoTLS [ "--no-tls-very-insecure" ]
           ++ lib.optionals (!cfg.insecureNoTLS) [
