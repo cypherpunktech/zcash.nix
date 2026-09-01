@@ -22,9 +22,18 @@ on:
 # Cancel a run only when a newer one tests the SAME thing. Pushing to a PR
 # supersedes its own previous run, so cancelling there saves runner time and
 # loses nothing. Consecutive pushes to main do not supersede each other: each
-# commit here adds a different package, and these builds take tens of minutes
-# from source, so cancelling one throws away the only evidence that the
-# previous package built on Linux. Learned by watching it happen to zebra.
+# commit adds a different package, and these builds take tens of minutes from
+# source, so cancelling one throws away the only evidence that the previous
+# package built on Linux. Learned by watching it happen to zebra.
+#
+# What this does and does not buy, measured rather than assumed: a RUNNING
+# build now survives the next push to main. A QUEUED one still does not --
+# GitHub keeps at most one pending run per concurrency group, so a third push
+# supersedes the second's queued run regardless of this setting. The tip of
+# main is therefore always built; intermediate commits during a rapid series
+# may not be. Dropping the group entirely would build every commit, at several
+# cold multi-package runs in parallel -- not affordable on this repo's free
+# private-org minutes. Revisit when the repo goes public.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
