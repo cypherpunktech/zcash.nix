@@ -42,6 +42,24 @@ rustPlatform.buildRustPackage {
     "zainod"
   ];
 
+  # Rust embeds absolute source paths for panic messages and backtraces, and
+  # nix's build directory is named with a pid and a random number
+  # (/builds/nix-69568-3116585407/...). So the path leaks into the binary and
+  # every rebuild produces different bytes -- measured with `nix build
+  # --rebuild`, which found exactly two differences: the vendored crate paths,
+  # and the Mach-O LC_UUID that ld64 derives from a content hash and which
+  # therefore only changed because the paths did.
+  #
+  # --remap-path-prefix rewrites them to a constant. It has to be exported here
+  # rather than set in `env`, because $NIX_BUILD_TOP is only known once the
+  # builder is running.
+  #
+  # This is why lightwalletd reproduces and the Rust packages do not:
+  # buildGoModule passes -trimpath, and buildRustPackage has no equivalent.
+  preBuild = ''
+    export RUSTFLAGS="''${RUSTFLAGS:-} --remap-path-prefix=$NIX_BUILD_TOP=/zcash-nix-build"
+  '';
+
   doCheck = false;
 
   nativeBuildInputs = [
@@ -73,12 +91,13 @@ rustPlatform.buildRustPackage {
     homepage = "https://github.com/zingolabs/zaino";
     license = lib.licenses.asl20;
     mainProgram = "zainod";
-    # aarch64-darwin is proved on a maintainer's machine, x86_64-linux by CI.
-    # aarch64-linux is NOT listed: no runner has ever built it, and a platform
-    # nobody has compiled is a claim, not a fact. It goes back in the moment a
-    # build there is green -- see CI_ARM_LINUX in .github/workflows/discover.yml.
+    # Every platform here has been built AND had its binary run. x86_64-linux
+    # and aarch64-linux by CI; aarch64-darwin on a maintainer's machine, which
+    # is the weakest of the three and stays that way until macOS runners are
+    # affordable (CI_MACOS in .github/workflows/discover.yml).
     platforms = [
       "aarch64-darwin"
+      "aarch64-linux"
       "x86_64-linux"
     ];
   };
