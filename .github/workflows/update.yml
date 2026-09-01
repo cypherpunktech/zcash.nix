@@ -51,9 +51,23 @@ jobs:
       # nix-update rewrites version, src hash and cargoHash in place, finding
       # the file through meta.position. It builds to discover the new hashes,
       # so a bump that cannot build fails here — which is the point.
+      # Two kinds of pin need two strategies, and the pin itself says which:
+      # a package tracking releases is pinned to refs/tags/*, one whose upstream
+      # cuts no releases is pinned to a bare commit. Asking nix-update for a
+      # "stable" version of a project that has never tagged one fails every
+      # week, and a weekly red job for a package behaving correctly is exactly
+      # the noise that trains people to ignore the alarm. check-staleness.sh
+      # branches on the same field for the same reason.
+      #
+      # `--version=` here is nix-update's TARGET, not a request to print its own.
       - name: Bump the pin
-        id: bump
-        run: nix develop --command nix-update --flake --version=stable '${{ matrix.package }}'
+        run: |
+          case "$(nix eval --raw '.#${{ matrix.package }}.src.rev')" in
+            refs/tags/*) target=stable ;;
+            *)           target=branch ;;
+          esac
+          echo "bumping ${{ matrix.package }} toward: $target"
+          nix develop --command nix-update --flake --version="$target" '${{ matrix.package }}'
 
       - name: Did anything change?
         id: changed
@@ -83,7 +97,7 @@ jobs:
         with:
           branch: update/${{ matrix.package }}
           delete-branch: false
-          title: "update(${{ matrix.package }}): ${{ steps.bump.outputs.version || steps.changed.outputs.version }}"
+          title: "update(${{ matrix.package }}): ${{ steps.changed.outputs.version }}"
           commit-message: "update(${{ matrix.package }}): ${{ steps.changed.outputs.version }}"
           body: |
             Automated version bump by `nix-update`.
