@@ -9,6 +9,13 @@
 # Actions are SHA-pinned: tags are mutable.
 name: check
 
+# Least privilege, stated rather than inherited: these jobs read the repo
+# and nothing else. Without this the token's scope is whatever the repo
+# default happens to be, which is a setting outside this file and can change
+# without a commit.
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -43,6 +50,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
       - run: nix flake check --all-systems --no-build
 
@@ -64,6 +73,8 @@ jobs:
       CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
       # Skipped, with a warning rather than a failure, until the token exists.

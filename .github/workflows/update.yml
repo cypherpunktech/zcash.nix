@@ -39,6 +39,8 @@ jobs:
       CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
       - name: Cachix
@@ -109,6 +111,12 @@ jobs:
         if: steps.changed.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
+          # Explicit, because the checkout above sets persist-credentials:
+          # false. This action authenticates with its own token input rather
+          # than credentials left in .git/config, which is the combination its
+          # docs recommend -- but relying on the default here would make the
+          # workflow's correctness depend on a default we deliberately removed.
+          token: ${{ secrets.GITHUB_TOKEN }}
           branch: update/${{ matrix.package }}
           delete-branch: false
           title: "update(${{ matrix.package }}): ${{ steps.changed.outputs.version }}"

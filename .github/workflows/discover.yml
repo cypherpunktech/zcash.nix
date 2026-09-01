@@ -6,6 +6,9 @@
 # to disagree — CI would then quietly test a different set than the flake ships.
 name: discover
 
+permissions:
+  contents: read
+
 on:
   workflow_call:
     outputs:
@@ -24,6 +27,8 @@ jobs:
       targets: ${{ steps.targets.outputs.list }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
       - id: packages
