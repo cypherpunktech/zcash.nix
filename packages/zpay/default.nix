@@ -20,7 +20,14 @@
 }:
 rustPlatform.buildRustPackage {
   pname = "zpay";
-  version = "0.1.0-unstable-2026-07-21";
+  # `0-unstable-<date>`, not `0.1.0-unstable-<date>`: nixpkgs' convention uses
+  # the last RELEASED version, and upstream has never released, so the leading
+  # component is 0. This is not cosmetic -- nix-update rewrites the string to
+  # this form on sight, so the earlier spelling made the updater produce a
+  # version-rename diff on every single run. A weekly pull request that changes
+  # nothing is exactly the noise that teaches people to stop reading the bot.
+  # Verified idempotent: a second nix-update run reports no changes.
+  version = "0-unstable-2026-07-21";
 
   src = fetchFromGitHub {
     owner = "gustavovalverde";
