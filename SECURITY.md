@@ -43,13 +43,19 @@ alternative is unpinned, unreproducible, hand-installed binaries.
   peers and real chain state, neither of which exists in a build sandbox. What
   *is* run is a smoke check that starts each binary — see `checks.smoke-*`.
   That catches link and wrapper breakage; it is not a correctness test.
-- **Bit-for-bit reproducibility is NOT claimed.** Measured, not assumed:
-  `nix build --rebuild` reproduces `lightwalletd` identically, and does **not**
-  reproduce `zaino` — Nix reports the output differs on a second build. The
-  other packages are untested. Pinning guarantees the same *inputs*, which is
-  what the hashes above are about; it does not by itself guarantee the same
-  *output bytes*, and for Rust builds here it demonstrably does not. Do not
-  treat a matching store path as independent verification of a binary.
+- **Bit-for-bit reproducibility is worked for, and measured, not assumed.**
+  On Linux the Rust packages reproduce with no flags at all, across machines.
+  On macOS, stock nixpkgs Rust binaries do *not* — Hydra's own `fd` and
+  `ripgrep` fail `nix build --rebuild` there — because Nix runs each darwin
+  build in a randomly named directory, and that name reaches the binary
+  through three channels nixpkgs leaves open: rustc's panic paths, C
+  `__FILE__` strings, and ld64's debug-map stabs. `flake.nix` closes all three
+  for every Rust package here. A package can still stamp in its own build
+  environment — zaino read the build user — and that is fixed in the package.
+  `.github/workflows/repro.yml` rebuilds a package N times and fails on any
+  difference; results per package are in the git log of the commit that
+  enabled this. Pinning guarantees the same *inputs*; a matching store path is
+  still not independent verification of a binary — run `repro.yml` yourself.
 - **Build-time code execution.** Building a Rust workspace runs `build.rs` from
   every crate in the graph, and building Go runs its toolchain. This is normal
   and unavoidable, and it is why builds are sandboxed and CI tokens are not left

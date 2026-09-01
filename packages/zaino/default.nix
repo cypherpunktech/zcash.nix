@@ -42,6 +42,24 @@ rustPlatform.buildRustPackage {
     "zainod"
   ];
 
+  # zaino-state's build.rs also stamps the binary with whoami::username(), and
+  # on darwin that is whichever _nixbld<N> the daemon hands the build. Two
+  # builds got different users and produced different binaries; when N went
+  # from one digit to two the string outgrew rustc's immediate encoding, moved
+  # to rodata, and shifted the entire text section by four bytes. It hid from
+  # `strings` for exactly that reason -- an 8-byte value lives in mov/movk
+  # immediates -- which is how it was first ruled out and then found by
+  # disassembly.
+  #
+  # whoami reads getpwuid, so no env var neutralises it. The patch gives
+  # build.rs an override in the same shape as its existing ZAINO_GIT_* ones;
+  # --replace-fail makes the build stop the day upstream changes the line.
+  postPatch = ''
+    substituteInPlace packages/zaino-state/build.rs \
+      --replace-fail 'whoami::username().unwrap_or_default()' \
+                     'std::env::var("ZAINO_BUILD_USER").unwrap_or_else(|_| whoami::username().unwrap_or_default())'
+  '';
+
   doCheck = false;
 
   nativeBuildInputs = [
@@ -64,6 +82,8 @@ rustPlatform.buildRustPackage {
     # of the revision here is a copy nix-update would not know to bump.
     ZAINO_GIT_COMMIT_ID = src.rev;
     ZAINO_GIT_BRANCH = src.rev;
+    # Read by the override patched into build.rs above.
+    ZAINO_BUILD_USER = "nix";
   };
 
   passthru.smokeArgs = [ "--version" ];

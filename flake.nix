@@ -50,15 +50,81 @@
 
       eachSystem = f: lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
+      # Rust binaries from nixpkgs' buildRustPackage are not bit-reproducible on
+      # darwin: Hydra's own fd and ripgrep fail `nix build --rebuild` there. nix
+      # runs every darwin build in /nix/var/nix/builds/nix-<pid>-<random>, and
+      # no setting pins it -- the constant /build comes from the Linux chroot
+      # builder, and sandbox-build-dir is not compiled on darwin. rustc bakes
+      # that path into every vendored crate's panic locations; C sources built
+      # through the `cc` crate bake it into __FILE__. buildGoModule passes
+      # -trimpath. buildRustPackage passes nothing.
+      #
+      # Measured before being believed: a dependency-free Rust program
+      # reproduces here; the same program with one dependency does not; with
+      # the remap it does again. Applied once, to every Rust package through
+      # the rustPlatform it receives, because the property belongs to "Rust on
+      # this nixpkgs" rather than to any package. The channels are the point:
+      #   NIX_RUSTFLAGS      -- the rustc wrapper APPENDS it; env RUSTFLAGS would
+      #                         replace nixpkgs' own -Cforce-frame-pointers=yes.
+      #   NIX_CFLAGS_COMPILE -- through the cc-wrapper for C and C++ alike;
+      #                         exporting CXXFLAGS clobbers a crate's [env] one
+      #                         (zaino sets `-include cstdint` that way).
+      #   $NIX_BUILD_TOP is only known inside the builder, hence preBuild.
+      #
+      # The remap covers what the COMPILER writes. The LINKER has its own path
+      # channel: N_OSO stabs, which record each object's path as ld64 saw it
+      # on the link line, /nix/var/nix/builds/nix-<pid>-<random>/... -- no
+      # rustc flag reaches them. Only objects carrying DWARF produce stabs; in
+      # this tree that is ring's pregenerated assembly, built with -g. ld64
+      # excludes stab STRINGS from the LC_UUID hash but not the offsets they
+      # push around, and the random dir name is 19 or 20 characters, so about
+      # one build in three shifted LC_CODE_SIGNATURE's offset and got a
+      # different UUID with byte-identical content. Found by diffing unstripped
+      # outputs and predicting each rebuild's result from its dir length
+      # before seeing it. `-Wl,-S` makes ld64 emit no stabs at all; nixpkgs
+      # strips them in fixupPhase anyway, so nothing that shipped is lost.
+      #
+      # A package can still embed its own build environment -- zaino read the
+      # build user via whoami -- and that is fixed in the package, not here.
+      reproducibleRustPlatform =
+        pkgs:
+        pkgs.rustPlatform
+        // {
+          buildRustPackage =
+            args:
+            pkgs.rustPlatform.buildRustPackage (
+              args
+              // {
+                preBuild = ''
+                  export NIX_RUSTFLAGS="''${NIX_RUSTFLAGS:-} --remap-path-prefix=$NIX_BUILD_TOP=/build -C link-arg=-Wl,-S"
+                  export NIX_CFLAGS_COMPILE="''${NIX_CFLAGS_COMPILE:-} -ffile-prefix-map=$NIX_BUILD_TOP=/build"
+                ''
+                + (args.preBuild or "");
+              }
+            );
+        };
+
       # A package IS a directory under packages/. Adding one is adding a
       # directory — there is no list in this file to forget to edit. The
       # overlay and the packages output are this one function applied to
       # different package sets, so they cannot drift apart.
       packagesFor =
         pkgs:
-        lib.genAttrs (lib.attrNames (
-          lib.filterAttrs (_: type: type == "directory") (builtins.readDir ./packages)
-        )) (name: pkgs.callPackage (./packages + "/${name}") { });
+        lib.genAttrs
+          (lib.attrNames (lib.filterAttrs (_: type: type == "directory") (builtins.readDir ./packages)))
+          (
+            name:
+            let
+              package = import (./packages + "/${name}");
+            in
+            # callPackage passes explicit arguments unconditionally, and a Go
+            # package that never asked for rustPlatform would reject it.
+            pkgs.callPackage package (
+              lib.optionalAttrs (lib.functionArgs package ? rustPlatform) {
+                rustPlatform = reproducibleRustPlatform pkgs;
+              }
+            )
+          );
 
       # `nix flake check --all-systems` forces every package's drvPath, and
       # asking for the drvPath of a package whose own meta says it is

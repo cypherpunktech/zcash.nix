@@ -155,6 +155,37 @@ Nothing caught it because nothing tests a platform you never build.
   together and has nothing to unpack, but without `src` the staleness gate cannot
   see what it is pinned to and the package goes silently unwatched.
 
+## Reproducibility, and how it was lost three times before it was found
+
+Every Rust package here is built bit-reproducibly on darwin through
+`reproducibleRustPlatform` in `flake.nix`. Read its comment before touching
+it. The rules that came out of finding the causes:
+
+- **Always `--rebuild --keep-failed`.** A differing rebuild without a retained
+  `.check` output is a failure you cannot diagnose and will have to reproduce.
+  Two cycles were lost this way.
+- **Record the build user and build-dir length for every rebuild.** The daemon
+  hands out `_nixbld<N>` per concurrent build and names the dir
+  `nix-<pid>-<random>`; a lone rebuild gets the same slot and the same length
+  as the original and passes by coincidence. A pass proves nothing unless those
+  varied.
+- **`strings` cannot see an 8-byte value.** rustc encodes it as `mov`/`movk`
+  immediates. `BUILD_USER` was ruled out with `strings`, then found by
+  disassembling `get_build_info`. Use `otool -tv` on the function that consumes
+  the value.
+- **Compiler remaps do not reach the linker.** `--remap-path-prefix` fixes what
+  rustc writes; N_OSO stabs are what ld64 read from the filesystem, and only
+  `-Wl,-S` or `-oso_prefix` touches them.
+- **Bucket differing bytes by Mach-O section before theorising.** A diff that
+  is only `LC_UUID` + code signature means the content is identical and
+  something strip removed differed; `scratchpad` scripts from the investigation
+  do this from `cmp -l`. Two wrong theories -- LLVM ThinLTO drift, an ld64 hash
+  race -- were written into this tree and removed because the bytes were read
+  after the theory rather than before.
+- **Linux is a stricter test than darwin for some things.** Its shipped ELF keeps
+  `.symtab` with the ThinLTO `.llvm.<hash>` names; darwin's does not. Stable on
+  Linux across machines means those hashes are not drifting anywhere.
+
 ## The updater must not fail closed
 
 `.github/workflows/update.yml` opens version-bump PRs and never auto-merges. On
