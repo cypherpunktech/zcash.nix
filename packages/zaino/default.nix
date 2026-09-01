@@ -42,32 +42,6 @@ rustPlatform.buildRustPackage {
     "zainod"
   ];
 
-  # Rust embeds absolute source paths for panic messages and backtraces, and
-  # nix's build directory is named with a pid and a random number
-  # (/builds/nix-69568-3116585407/...). So the path leaks into the binary and
-  # every rebuild produces different bytes -- measured with `nix build
-  # --rebuild`, which found exactly two differences: the vendored crate paths,
-  # and the Mach-O LC_UUID that ld64 derives from a content hash and which
-  # therefore only changed because the paths did.
-  #
-  # --remap-path-prefix rewrites them to a constant. It has to be exported here
-  # rather than set in `env`, because $NIX_BUILD_TOP is only known once the
-  # builder is running.
-  #
-  # This is why lightwalletd reproduces and the Rust packages do not:
-  # buildGoModule passes -trimpath, and buildRustPackage has no equivalent.
-  # Two flags because two compilers embed the path. rustc needs
-  # --remap-path-prefix; the C sources that -sys crates compile through the
-  # `cc` crate need -ffile-prefix-map, and rustc's flag does nothing for them.
-  # Measured: the rust flag alone remapped 1077 paths and left 81, all of them
-  # __FILE__ strings from aws-lc-sys and lmdb-sys.
-  preBuild = ''
-    remap="$NIX_BUILD_TOP=/zcash-nix-build"
-    export RUSTFLAGS="''${RUSTFLAGS:-} --remap-path-prefix=$remap"
-    export CFLAGS="''${CFLAGS:-} -ffile-prefix-map=$remap"
-    export CXXFLAGS="''${CXXFLAGS:-} -ffile-prefix-map=$remap"
-  '';
-
   doCheck = false;
 
   nativeBuildInputs = [

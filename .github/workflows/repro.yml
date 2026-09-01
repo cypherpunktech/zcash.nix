@@ -1,0 +1,69 @@
+# Bit-for-bit reproducibility check, on demand.
+#
+# Builds a package, then builds it again with --rebuild, which makes nix
+# compare the second output byte-for-byte against the first and fail if they
+# differ. Run it several times: a build that is flaky rather than systematically
+# different can pass once and fail the next.
+#
+# Linux only, deliberately. Sandboxed Linux builds run in a constant /build
+# directory; darwin builds run in /nix/var/nix/builds/nix-<pid>-<random>, so
+# anything that embeds the build path -- rustc debuginfo, C __FILE__ strings,
+# cargo metadata hashes -- differs there for reasons unrelated to the package.
+# This workflow answers "is the package reproducible", not "is darwin".
+name: repro
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Package attribute to check
+        required: true
+        default: zaino
+      runs:
+        description: How many --rebuild passes (flaky failures need more than one)
+        required: true
+        default: "3"
+
+jobs:
+  repro:
+    runs-on: ubuntu-latest
+    env:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+
+      # Pull only. If the first build substitutes from the cache, the rebuild
+      # compares this runner's output against a build from a DIFFERENT
+      # machine, which is a stronger result than two builds on one box.
+      - name: Cachix
+        if: env.CACHIX_AUTH_TOKEN != ''
+        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        with:
+          name: cypherpunktech
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: true
+
+      - name: Build
+        run: nix build -L '.#${{ inputs.package }}' --no-link --print-out-paths
+
+      - name: Rebuild and compare
+        run: |
+          fails=0
+          for i in $(seq 1 "${{ inputs.runs }}"); do
+            echo "::group::rebuild $i of ${{ inputs.runs }}"
+            if nix build -L '.#${{ inputs.package }}' --rebuild --no-link; then
+              echo "rebuild $i: identical"
+            else
+              echo "rebuild $i: DIFFERS"
+              fails=$((fails + 1))
+            fi
+            echo "::endgroup::"
+          done
+          echo "::notice title=${{ inputs.package }} reproducibility::$((${{ inputs.runs }} - fails)) of ${{ inputs.runs }} rebuilds identical"
+          [ "$fails" -eq 0 ]
