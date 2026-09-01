@@ -9,36 +9,38 @@
 self: _: {
   name = "zcash-zebra";
 
-  nodes.machine = {
-    imports = [ self.nixosModules.zebra ];
+  nodes.machine =
+    { ... }:
+    {
+      imports = [ self.nixosModules.zebra ];
 
-    services.zcash.zebra = {
-      enable = true;
-      settings = {
-        network = {
-          network = "Regtest";
-          # THE EMPTY SEED LISTS ARE LOAD-BEARING. A NixOS test VM has no
-          # network, and zebrad blocks startup resolving seed peers: it loops
-          # "empty peer list after DNS resolution, retrying after 5 seconds"
-          # forever and never binds its RPC port, so the test times out while
-          # the daemon looks perfectly healthy in the journal.
-          #
-          # Regtest does not save you from this on its own -- Zebra treats it
-          # as a testnet variant and still resolves the testnet seeds.
-          # Verified by running zebrad locally with exactly this config: RPC
-          # answered getinfo on the first attempt.
-          initial_mainnet_peers = [ ];
-          initial_testnet_peers = [ ];
-          cache_dir = false;
+      services.zcash.zebra = {
+        enable = true;
+        settings = {
+          network = {
+            network = "Regtest";
+            # THE EMPTY SEED LISTS ARE LOAD-BEARING. A NixOS test VM has no
+            # network, and zebrad blocks startup resolving seed peers: it loops
+            # "empty peer list after DNS resolution, retrying after 5 seconds"
+            # forever and never binds its RPC port, so the test times out while
+            # the daemon looks perfectly healthy in the journal.
+            #
+            # Regtest does not save you from this on its own -- Zebra treats it
+            # as a testnet variant and still resolves the testnet seeds.
+            # Verified by running zebrad locally with exactly this config: RPC
+            # answered getinfo on the first attempt.
+            initial_mainnet_peers = [ ];
+            initial_testnet_peers = [ ];
+            cache_dir = false;
+          };
+          state.ephemeral = true;
+          rpc.listen_addr = "127.0.0.1:18232";
+          rpc.enable_cookie_auth = false;
         };
-        state.ephemeral = true;
-        rpc.listen_addr = "127.0.0.1:18232";
-        rpc.enable_cookie_auth = false;
       };
-    };
 
-    virtualisation.memorySize = 2048;
-  };
+      virtualisation.memorySize = 2048;
+    };
 
   testScript = ''
     machine.wait_for_unit("zebra.service")
@@ -69,7 +71,18 @@ self: _: {
 
     # State landed in the StateDirectory and is private to the service.
     machine.succeed("test -d /var/lib/zebra")
-    machine.succeed("test $(stat -c %a /var/lib/zebra) = 700")
+
+    # -L is load-bearing, and the reason is worth knowing: under DynamicUser
+    # systemd puts the real directory at /var/lib/private/zebra and makes
+    # /var/lib/zebra a symlink to it. `stat` does not follow symlinks by
+    # default, so without -L this reads the symlink's own mode, which is always
+    # 777, and the assertion fails while the actual directory is 0700.
+    #
+    # The value is interpolated into the message rather than compared inside
+    # the shell: `test $(...) = 700` fails without ever saying what it saw,
+    # which cost a CI round trip to work out.
+    mode = machine.succeed("stat -Lc %a /var/lib/zebra").strip()
+    assert mode == "700", f"/var/lib/zebra is mode {mode}, expected 700"
 
     # Not running as root.
     machine.fail("systemctl show zebra.service -p User | grep -q 'User=root'")
