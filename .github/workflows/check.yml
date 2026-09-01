@@ -1,0 +1,83 @@
+# Two gates, because they fail for different reasons and cost very different
+# amounts of runner time:
+#
+#   eval  — proves the flake evaluates for all three systems. Seconds, no build,
+#           and it catches most breakage (a bad hash, a renamed attribute).
+#   build — the only thing that proves a binary links and RUNS. One job per
+#           package so a single failure cannot hide the rest.
+#
+# Actions are SHA-pinned: tags are mutable.
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  # Upstream nixpkgs moves under us between pushes; a weekly run means that
+  # breakage surfaces on its own rather than ambushing the next commit.
+  schedule:
+    - cron: "23 6 * * 1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      - run: nix flake check --all-systems --no-build
+
+  discover:
+    uses: ./.github/workflows/discover.yml
+
+  build:
+    needs: discover
+    name: ${{ matrix.package }} · ${{ matrix.target.system }}
+    runs-on: ${{ matrix.target.runner }}
+    strategy:
+      # Every package's result is wanted on every run: one red package must not
+      # cancel the others, or a single early failure hides the real state.
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.discover.outputs.packages) }}
+        target: ${{ fromJSON(needs.discover.outputs.targets) }}
+    env:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+
+      # Skipped, with a warning rather than a failure, until the token exists.
+      # Without it every run rebuilds every package from source.
+      - name: Cachix
+        if: env.CACHIX_AUTH_TOKEN != ''
+        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        with:
+          name: zcash-nix
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      # A package that does not claim this system is absent from that system's
+      # packages output entirely, so there is nothing here to build. Announce
+      # the skip: a platform silently untested is how a support claim rots.
+      - name: Platform claimed?
+        id: claim
+        run: |
+          claimed=$(nix eval --json '.#packages.${{ matrix.target.system }}' --apply 'p: p ? ${{ matrix.package }}')
+          echo "claimed=$claimed" >> "$GITHUB_OUTPUT"
+          if [ "$claimed" != "true" ]; then
+            echo "::notice title=Not built::${{ matrix.package }} does not claim ${{ matrix.target.system }} — see meta.badPlatforms in packages/${{ matrix.package }}/default.nix"
+          fi
+
+      - name: Build
+        if: steps.claim.outputs.claimed == 'true'
+        run: nix build -L '.#packages.${{ matrix.target.system }}.${{ matrix.package }}'
+
+      # Separate from Build so the log says which one broke: a green build with
+      # a red smoke test means the binary linked but cannot start.
+      - name: Smoke test — runs the binary
+        if: steps.claim.outputs.claimed == 'true'
+        run: nix build -L '.#checks.${{ matrix.target.system }}.smoke-${{ matrix.package }}'

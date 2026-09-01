@@ -1,0 +1,29 @@
+# flake.lock bumps: native nix ecosystem support, no secrets, no minutes of our
+# own. Weekly rather than daily — six packages do not need a PR firehose — and
+# the one-day cooldown dodges same-day broken upstreams.
+#
+# This covers the flake INPUTS (nixpkgs, treefmt-nix). The package pins are a
+# different problem with a different cadence and live in update.yml.
+version: 2
+updates:
+  - package-ecosystem: "nix"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 1
+    open-pull-requests-limit: 3
+    labels: ["update"]
+    commit-message:
+      prefix: "update(nix)"
+
+  # The workflows pin actions by SHA, which is immutable and therefore never
+  # gets a security fix on its own. Dependabot is what moves those pins.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    labels: ["update"]
+    commit-message:
+      prefix: "update(actions)"

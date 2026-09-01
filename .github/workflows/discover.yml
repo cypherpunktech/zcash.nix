@@ -1,0 +1,51 @@
+# The single definition of "what packages exist" and "where do we build them",
+# reused by check.yml, update.yml and stale.yml.
+#
+# It asks the flake rather than listing packages/ in shell, deliberately: the
+# discovery rule lives in flake.nix, and a second copy of it here would be free
+# to disagree — CI would then quietly test a different set than the flake ships.
+name: discover
+
+on:
+  workflow_call:
+    outputs:
+      packages:
+        description: JSON array of package names
+        value: ${{ jobs.discover.outputs.packages }}
+      targets:
+        description: JSON array of { runner, system } to build on
+        value: ${{ jobs.discover.outputs.targets }}
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.packages.outputs.list }}
+      targets: ${{ steps.targets.outputs.list }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+
+      - id: packages
+        run: |
+          list=$(nix eval --json '.#packages.x86_64-linux' --apply builtins.attrNames)
+          echo "list=$list" >> "$GITHUB_OUTPUT"
+          echo "packages: $list"
+
+      # This repo is private on a free org plan: 2000 minutes/month with macOS
+      # billed at 10x, so one cold zebra build on macOS would eat the budget.
+      # Only x86_64-linux runs by default. Going public is then a one-variable
+      # change — set the CI_ALL_PLATFORMS repo variable to "true" — rather than
+      # a workflow rewrite. aarch64-darwin is proved on the maintainer's machine
+      # meanwhile, and pushed to Cachix from there.
+      - id: targets
+        env:
+          ALL_PLATFORMS: ${{ vars.CI_ALL_PLATFORMS }}
+        run: |
+          if [ "$ALL_PLATFORMS" = "true" ]; then
+            list='[{"runner":"ubuntu-latest","system":"x86_64-linux"},{"runner":"ubuntu-24.04-arm","system":"aarch64-linux"},{"runner":"macos-14","system":"aarch64-darwin"}]'
+          else
+            list='[{"runner":"ubuntu-latest","system":"x86_64-linux"}]'
+          fi
+          echo "list=$list" >> "$GITHUB_OUTPUT"
+          echo "targets: $list"

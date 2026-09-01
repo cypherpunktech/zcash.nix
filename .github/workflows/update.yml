@@ -1,0 +1,93 @@
+# Version bumps, one PR per package.
+#
+# The design constraint is negative: this workflow must never be able to fail
+# quietly. helium-flake's updater closed and deleted its own branch on every
+# error, so three months of total failure looked exactly like three months of
+# "nothing to update". So: no auto-merge, no branch deletion on failure, no
+# `|| true`. A broken bump leaves a red job and a branch you can look at, and
+# stale.yml independently asserts that bumps are actually happening.
+name: update
+
+on:
+  schedule:
+    - cron: "37 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    uses: ./.github/workflows/discover.yml
+
+  update:
+    needs: discover
+    name: update ${{ matrix.package }}
+    runs-on: ubuntu-latest
+    strategy:
+      # One package's upstream breaking must not stop the other five from
+      # getting their bumps.
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.discover.outputs.packages) }}
+    env:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+
+      - name: Cachix
+        if: env.CACHIX_AUTH_TOKEN != ''
+        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        with:
+          name: zcash-nix
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      # nix-update rewrites version, src hash and cargoHash in place, finding
+      # the file through meta.position. It builds to discover the new hashes,
+      # so a bump that cannot build fails here — which is the point.
+      - name: Bump the pin
+        id: bump
+        run: nix develop --command nix-update --flake --version=stable '${{ matrix.package }}'
+
+      - name: Did anything change?
+        id: changed
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "already on the newest release"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "version=$(nix eval --raw '.#${{ matrix.package }}.version')" >> "$GITHUB_OUTPUT"
+            git --no-pager diff
+          fi
+
+      # A bump that builds but produces a binary that cannot start is exactly
+      # the breakage a version PR should catch, so the smoke check gates the PR
+      # rather than only running after merge.
+      - name: Smoke test — runs the new binary
+        if: steps.changed.outputs.changed == 'true'
+        run: nix build -L '.#checks.x86_64-linux.smoke-${{ matrix.package }}'
+
+      # No auto-merge: this repo is not at the scale where an unread version
+      # bump of a consensus node should land itself. delete-branch stays false
+      # so a failed run leaves evidence behind instead of tidying itself away.
+      - name: Open PR
+        if: steps.changed.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          branch: update/${{ matrix.package }}
+          delete-branch: false
+          title: "update(${{ matrix.package }}): ${{ steps.bump.outputs.version || steps.changed.outputs.version }}"
+          commit-message: "update(${{ matrix.package }}): ${{ steps.changed.outputs.version }}"
+          body: |
+            Automated version bump by `nix-update`.
+
+            Built and smoke-tested on x86_64-linux by this run. The full
+            per-platform matrix runs on this PR via `check.yml`; read it before
+            merging — a consensus node's version bump is not a rubber stamp.

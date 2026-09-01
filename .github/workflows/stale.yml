@@ -1,0 +1,25 @@
+# The reason to trust the pins.
+#
+# update.yml can silently stop working — a changed upstream API, a revoked
+# token, a workflow disabled after 60 days of repo inactivity — and its failure
+# mode looks identical to "nothing to update". This job asserts the outcome
+# instead of the mechanism: every package is close to upstream's latest. It goes
+# red when the updater stops working, whatever the reason.
+#
+# Cheap by construction: evaluation and GitHub API calls, no builds.
+name: stale
+
+on:
+  schedule:
+    - cron: "41 7 * * *"
+  workflow_dispatch:
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      - run: ./scripts/check-staleness.sh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
