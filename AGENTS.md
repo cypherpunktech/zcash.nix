@@ -5,9 +5,14 @@ a specific failure that has already happened.
 
 ## What this repo is
 
-Nix packages for the Zcash ecosystem, built from pinned upstream source. It
-exists because nixpkgs packages only `zcash` (sunset zcashd) and `lightwalletd`;
-Zebra, the indexers and Zallet have no nixpkgs attribute at all.
+Nix packages **and NixOS service modules** for the Zcash ecosystem, built from
+pinned upstream source. It exists because nixpkgs packages only `zcash` (sunset
+zcashd) and `lightwalletd`; Zebra, the indexers and Zallet have no nixpkgs
+attribute at all.
+
+Both halves matter. The packages give a binary; the modules give the unit
+around it, which is where a node ends up running as root with its state
+world-readable.
 
 ## Adding a package
 
@@ -23,6 +28,55 @@ Every derivation must set:
 - `passthru.smokeArgs` — the argv that proves the binary runs. **No default.**
   A package that does not answer this fails at eval, because an unproven
   package is worse than an absent one.
+
+## Adding a NixOS module
+
+Same rule as packages: `modules/<name>/default.nix`, found by `readDir`. Plain
+`.nix` files beside them (`hardening.nix`, `node.nix`) are skipped by the
+directory filter — shared code must not become a module by accident.
+
+A module is a function of `self`, so `package` can default to this flake's
+build with no overlay and no second place naming which package a service runs.
+
+Import the shared hardening rather than writing your own:
+
+```nix
+serviceConfig = (import ../hardening.nix) // { ... };
+```
+
+If a service genuinely cannot use it, say so where someone will hit it and add
+an assertion to `tests/units.nix` so the deviation stays confined. `zinder` is
+the worked example: its four runtimes share a storage tree, and `DynamicUser`
+allocates a different uid per service, so they run as one static user instead.
+
+**Refuse to guess on security-relevant defaults.** Three modules already do:
+`openFirewall` never opens RPC, `lightwalletd` will not start without TLS
+unless `insecureNoTLS` is set, and `zallet` needs `acceptBetaRisk` because it
+holds spending keys and upstream says so itself. Silently picking the
+convenient option launders a decision that belongs to the operator.
+
+## Testing modules
+
+`nixosTest` needs a Linux builder with KVM. It cannot run on macOS at all, so
+CI is the only place VM tests execute — and a wrong test costs a full round
+trip. Before pushing, get what you can locally by evaluating a real system:
+
+```nix
+nixpkgs.lib.nixosSystem { system = "x86_64-linux"; modules = [ ... ]; }
+```
+
+then read `config.systemd.services.<name>.serviceConfig` and force
+`config.system.build.toplevel.drvPath`, which is what actually evaluates
+`assertions`. That catches option-type errors, bad ExecStart, and failed
+assertions without a Linux machine.
+
+Better still, run the daemons directly. Two of the three VM failures so far
+were reproduced on the maintainer's Mac in two minutes each — zebrad looping on
+seed-peer DNS, and lightwalletd exiting without RPC credentials.
+
+**An assertion must report what it saw.** `test $(stat -c %a X) = 700` fails
+without printing the mode, which cost a round trip to diagnose. Compare in
+Python and interpolate the value into the message.
 
 ## Hashes
 
@@ -42,7 +96,16 @@ must prove. You cannot claim a platform without paying for it.
 
 When a build fails on a platform, move that system into `meta.badPlatforms` with
 a comment naming the actual error. Evidence, not silence, and not a lie in the
-other direction either. The README's support table states what CI really built.
+other direction either.
+
+There is deliberately **no support table in the README**: it would be a second
+copy of `meta.platforms`, free to drift from the thing CI actually builds. The
+derivations are the only claim.
+
+This rule has been broken here once already. All seven packages listed
+`aarch64-linux` while no runner had ever compiled any of them — a claim sitting
+in the tree looking like evidence, two files from the rule forbidding it.
+Nothing caught it because nothing tests a platform you never build.
 
 ## The rules that bite
 
