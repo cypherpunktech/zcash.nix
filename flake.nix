@@ -13,6 +13,26 @@
     treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
   };
 
+  # Without this, using this flake means compiling a Zcash node from source --
+  # about half an hour for zebra on a fast machine, considerably worse on a
+  # laptop. The cache is public, so pulling needs no credential; the token only
+  # ever exists on the pushing side.
+  #
+  # `extra-` prefixes, deliberately: these APPEND to the user's substituters
+  # rather than replacing them, so a machine with its own carefully-pinned list
+  # keeps it. Nix still asks before trusting a flake's nixConfig unless the user
+  # is a trusted-user, which is the correct place for that decision to sit.
+  #
+  # aarch64-darwin binaries reach this cache only by being pushed from a
+  # maintainer's Mac (`just push-cache <pkg>`): while the repo is private there
+  # is no macOS runner, so nothing else can produce them.
+  nixConfig = {
+    extra-substituters = [ "https://cypherpunktech.cachix.org" ];
+    extra-trusted-public-keys = [
+      "cypherpunktech.cachix.org-1:WKo2WboMVH8HUtCKNsSFx31YQibaJ2eocruFvAzWgA4="
+    ];
+  };
+
   outputs =
     {
       self,

@@ -29,4 +29,4 @@ update PKG: stage
 # IS the darwin build farm: pushing from here is the only way anyone else gets
 # a prebuilt Apple Silicon binary.
 push-cache PKG: (build PKG)
-    cachix push zcash-nix ./result
+    cachix push cypherpunktech ./result
