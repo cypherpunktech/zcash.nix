@@ -28,6 +28,12 @@ no nixpkgs attribute at all. This flake is that gap, closed.
 |---|---|
 | **zallet** | The RPC wallet replacing zcashd's embedded wallet. `zallet` — shipped with its `zallet-zebra` backend, because the `zallet` command is only a launcher and cannot run without one |
 
+### Light-client backend
+
+| | |
+|---|---|
+| **lightwalletd** | The service light wallets talk to. `lightwalletd` — the one package here that nixpkgs also has, kept because nixpkgs sits five releases behind |
+
 ### Payments
 
 | | |
@@ -69,6 +75,35 @@ $ nix run github:cypherpunktech/zcash.nix#zebra -- --version
 nixpkgs.overlays = [ zcash-nix.overlays.default ];
 # pkgs.zebra, pkgs.zallet, ...
 ```
+
+## Binary cache
+
+Prebuilt binaries are published to [`cypherpunktech.cachix.org`](https://app.cachix.org/cache/cypherpunktech).
+The cache is public: pulling needs no credential.
+
+`flake.nix` advertises it via `nixConfig`, but Nix will not act on a flake's own
+config for an untrusted user — you will see:
+
+```
+warning: ignoring untrusted flake configuration setting 'extra-substituters'
+```
+
+and then build from source. That refusal is correct: a flake asking to be
+trusted as a binary source is exactly the thing that should not be automatic.
+To accept it, either pass `--accept-flake-config` per command, or add yourself
+to `trusted-users` in `nix.conf` and set the substituter there permanently:
+
+```nix
+nix.settings = {
+  extra-substituters = [ "https://cypherpunktech.cachix.org" ];
+  extra-trusted-public-keys = [
+    "cypherpunktech.cachix.org-1:WKo2WboMVH8HUtCKNsSFx31YQibaJ2eocruFvAzWgA4="
+  ];
+};
+```
+
+aarch64-darwin binaries are pushed from a maintainer's machine, because a
+private repository has no macOS runner to build them.
 
 ## What you are trusting
 
