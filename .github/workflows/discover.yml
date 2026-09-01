@@ -47,20 +47,34 @@ jobs:
           echo "list=$list" >> "$GITHUB_OUTPUT"
           echo "vm tests: $list"
 
-      # This repo is private on a free org plan: 2000 minutes/month with macOS
-      # billed at 10x, so one cold zebra build on macOS would eat the budget.
-      # Only x86_64-linux runs by default. Going public is then a one-variable
-      # change — set the CI_ALL_PLATFORMS repo variable to "true" — rather than
-      # a workflow rewrite. aarch64-darwin is proved on the maintainer's machine
-      # meanwhile, and pushed to Cachix from there.
+      # Two variables, not one, because the two extra runners cost differently
+      # and the reasoning for gating them is not the same.
+      #
+      # macOS is billed at 10x against a free org plan's 2000 minutes, so one
+      # cold zebra build there is a meaningful fraction of the month. That is a
+      # real reason to leave it off.
+      #
+      # arm64 Linux is NOT known to be expensive. It was originally gated
+      # alongside macOS by inheriting macOS's justification without checking,
+      # which is how a cheap thing ends up switched off for an expensive
+      # thing's reason. Separating them means turning arm64 Linux on is its own
+      # decision, and its cost can be observed rather than assumed.
+      #
+      # Whatever runs here defines what meta.platforms may honestly claim:
+      # aarch64-linux stays out of every package's platforms list until a build
+      # here proves it.
       - id: targets
         env:
-          ALL_PLATFORMS: ${{ vars.CI_ALL_PLATFORMS }}
+          ARM_LINUX: ${{ vars.CI_ARM_LINUX }}
+          MACOS: ${{ vars.CI_MACOS }}
         run: |
-          if [ "$ALL_PLATFORMS" = "true" ]; then
-            list='[{"runner":"ubuntu-latest","system":"x86_64-linux"},{"runner":"ubuntu-24.04-arm","system":"aarch64-linux"},{"runner":"macos-14","system":"aarch64-darwin"}]'
-          else
-            list='[{"runner":"ubuntu-latest","system":"x86_64-linux"}]'
+          list='[{"runner":"ubuntu-latest","system":"x86_64-linux"}'
+          if [ "$ARM_LINUX" = "true" ]; then
+            list="$list"',{"runner":"ubuntu-24.04-arm","system":"aarch64-linux"}'
           fi
+          if [ "$MACOS" = "true" ]; then
+            list="$list"',{"runner":"macos-14","system":"aarch64-darwin"}'
+          fi
+          list="$list]"
           echo "list=$list" >> "$GITHUB_OUTPUT"
           echo "targets: $list"

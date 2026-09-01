@@ -64,7 +64,7 @@ buildGoModule {
     # aarch64-darwin is proved on a maintainer's machine, x86_64-linux by CI.
     # aarch64-linux is NOT listed: no runner has ever built it, and a platform
     # nobody has compiled is a claim, not a fact. It goes back in the moment a
-    # build there is green -- see CI_ALL_PLATFORMS in .github/workflows/discover.yml.
+    # build there is green -- see CI_ARM_LINUX in .github/workflows/discover.yml.
     platforms = [
       "aarch64-darwin"
       "x86_64-linux"
