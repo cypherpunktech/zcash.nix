@@ -92,6 +92,20 @@
           )
         ) (availableFor pkgs);
 
+      # Modules follow the same rule as packages: a module IS a directory under
+      # modules/, so adding one is adding a directory. hardening.nix sits
+      # alongside them as a plain file, which the directory filter skips --
+      # shared code is not a module and must not become one by accident.
+      moduleNames = lib.attrNames (
+        lib.filterAttrs (_: type: type == "directory") (builtins.readDir ./modules)
+      );
+
+      # Each module is a function of `self` so it can default its `package`
+      # option to this flake's build. That keeps `services.zcash.zebra.enable =
+      # true` working with no overlay and no second place to state which
+      # package a service runs.
+      modules = lib.genAttrs moduleNames (name: import (./modules + "/${name}") self);
+
       treefmtFor =
         pkgs:
         treefmt-nix.lib.evalModule pkgs {
@@ -109,11 +123,42 @@
     {
       overlays.default = final: _prev: packagesFor final;
 
+      # `nixosModules.default` turns everything on as options (not as running
+      # services -- each still needs its own enable), so a consumer imports one
+      # thing and then configures what they want.
+      nixosModules = modules // {
+        default.imports = lib.attrValues modules;
+      };
+
       packages = eachSystem availableFor;
+
+      # A NixOS VM test boots a machine and asserts the service runs, which is
+      # the only check that covers the unit rather than the binary. They exist
+      # only on Linux: nixosTest needs a Linux builder, so on darwin these are
+      # absent rather than failing, and CI is where they actually run.
+      nixosTests = eachSystem (
+        pkgs:
+        # isLinux is necessary but not sufficient: a VM test instantiates the
+        # module, which resolves its package from packages.<system>, so a
+        # system that claims no packages can produce no tests. aarch64-linux is
+        # exactly that case today. Deriving the condition from the package set
+        # rather than hardcoding a system means this corrects itself the moment
+        # a package is proven on a new Linux target.
+        lib.optionalAttrs (pkgs.stdenv.hostPlatform.isLinux && availableFor pkgs != { }) (
+          lib.mapAttrs' (
+            file: _:
+            let
+              name = lib.removeSuffix ".nix" file;
+            in
+            lib.nameValuePair name (pkgs.testers.runNixOSTest (import (./tests + "/${file}") self))
+          ) (lib.filterAttrs (f: _: lib.hasSuffix ".nix" f) (builtins.readDir ./tests))
+        )
+      );
 
       checks = eachSystem (
         pkgs:
         smokeChecks pkgs
+        // lib.mapAttrs' (n: lib.nameValuePair "vm-${n}") self.nixosTests.${pkgs.stdenv.hostPlatform.system}
         // {
           formatting = (treefmtFor pkgs).config.build.check self;
         }

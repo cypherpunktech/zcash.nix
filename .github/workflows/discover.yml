@@ -15,6 +15,9 @@ on:
       packages:
         description: JSON array of package names
         value: ${{ jobs.discover.outputs.packages }}
+      vmtests:
+        description: JSON array of NixOS VM test names
+        value: ${{ jobs.discover.outputs.vmtests }}
       targets:
         description: JSON array of { runner, system } to build on
         value: ${{ jobs.discover.outputs.targets }}
@@ -24,6 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       packages: ${{ steps.packages.outputs.list }}
+      vmtests: ${{ steps.vmtests.outputs.list }}
       targets: ${{ steps.targets.outputs.list }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -36,6 +40,12 @@ jobs:
           list=$(nix eval --json '.#packages.x86_64-linux' --apply builtins.attrNames)
           echo "list=$list" >> "$GITHUB_OUTPUT"
           echo "packages: $list"
+
+      - id: vmtests
+        run: |
+          list=$(nix eval --json '.#nixosTests.x86_64-linux' --apply builtins.attrNames)
+          echo "list=$list" >> "$GITHUB_OUTPUT"
+          echo "vm tests: $list"
 
       # This repo is private on a free org plan: 2000 minutes/month with macOS
       # billed at 10x, so one cold zebra build on macOS would eat the budget.

@@ -76,6 +76,57 @@ nixpkgs.overlays = [ zcash-nix.overlays.default ];
 # pkgs.zebra, pkgs.zallet, ...
 ```
 
+## NixOS modules
+
+Packages give you a binary. The part that is actually easy to get wrong is the
+unit around it — a consensus node holding tens of gigabytes of state, reachable
+from the internet, running as root because that is what the blog post did.
+
+```nix
+{
+  imports = [ zcash-nix.nixosModules.default ];
+
+  services.zcash.zebra = {
+    enable = true;
+    settings = {
+      network.network = "Mainnet";
+      rpc.listen_addr = "127.0.0.1:8232";
+    };
+  };
+
+  services.zcash.lightwalletd = {
+    enable = true;
+    tls.certFile = "/var/lib/secrets/lwd.pem";
+    tls.keyFile = "/var/lib/secrets/lwd.key";
+  };
+}
+```
+
+Every service runs under `DynamicUser` with an empty `CapabilityBoundingSet`,
+`ProtectSystem=strict`, a private `StateDirectory` at mode 0700, a syscall
+filter, and `MemoryDenyWriteExecute`. That block lives in one file,
+[`modules/hardening.nix`](modules/hardening.nix), with a comment per line
+explaining why it is there rather than a wall of directives copied from
+somewhere.
+
+`services.zcash.zebra.settings` is freeform: it becomes `zebrad.toml` verbatim,
+so every option zebrad has is available and nothing here has to be updated when
+upstream adds a field.
+
+Two deliberate refusals:
+
+- **`openFirewall` never opens the RPC port**, only peer-to-peer. RPC is an
+  administrative interface; a node exposing it to the internet is a node
+  somebody else is driving.
+- **lightwalletd will not start without TLS unless you say `insecureNoTLS =
+  true`.** A wallet's queries reveal what it is looking for, so plaintext
+  defeats much of the point of using Zcash. The module refuses to guess.
+
+The modules are covered by NixOS VM tests that boot a machine, start the
+service, query its RPC, and assert the hardening is actually applied — not just
+that the option was set. They run in CI on `x86_64-linux`; `nixosTest` needs a
+Linux builder with KVM, so they cannot run on macOS at all.
+
 ## Binary cache
 
 Prebuilt binaries are published to [`cypherpunktech.cachix.org`](https://app.cachix.org/cache/cypherpunktech).

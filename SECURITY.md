@@ -43,6 +43,13 @@ alternative is unpinned, unreproducible, hand-installed binaries.
   peers and real chain state, neither of which exists in a build sandbox. What
   *is* run is a smoke check that starts each binary — see `checks.smoke-*`.
   That catches link and wrapper breakage; it is not a correctness test.
+- **Bit-for-bit reproducibility is NOT claimed.** Measured, not assumed:
+  `nix build --rebuild` reproduces `lightwalletd` identically, and does **not**
+  reproduce `zaino` — Nix reports the output differs on a second build. The
+  other packages are untested. Pinning guarantees the same *inputs*, which is
+  what the hashes above are about; it does not by itself guarantee the same
+  *output bytes*, and for Rust builds here it demonstrably does not. Do not
+  treat a matching store path as independent verification of a binary.
 - **Build-time code execution.** Building a Rust workspace runs `build.rs` from
   every crate in the graph, and building Go runs its toolchain. This is normal
   and unavoidable, and it is why builds are sandboxed and CI tokens are not left

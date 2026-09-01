@@ -107,3 +107,42 @@ jobs:
       - name: Smoke test — runs the binary
         if: steps.claim.outputs.claimed == 'true'
         run: nix build -L '.#checks.${{ matrix.target.system }}.smoke-${{ matrix.package }}'
+
+  # NixOS VM tests: boot a machine, start the service, assert it runs and that
+  # the hardening is really applied. This is the only gate that covers the unit
+  # rather than the binary — a module with an unwritable state directory or a
+  # syscall filter that kills the daemon produces packages that pass every
+  # smoke check and a machine that does not work.
+  #
+  # x86_64-linux only: nixosTest needs a Linux builder with KVM, which no macOS
+  # or darwin path provides. These therefore cannot be run on a maintainer's
+  # Mac at all, and CI is the only place they ever execute.
+  vm:
+    needs: discover
+    name: vm-${{ matrix.test }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        test: ${{ fromJSON(needs.discover.outputs.vmtests) }}
+    env:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+
+      - name: Cachix
+        if: env.CACHIX_AUTH_TOKEN != ''
+        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        with:
+          name: cypherpunktech
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      # The runner must actually have KVM, or the test silently falls back to
+      # unbearably slow emulation. Fail loudly instead.
+      - name: KVM available?
+        run: test -e /dev/kvm || { echo "::error::no /dev/kvm on this runner; NixOS VM tests need it"; exit 1; }
+
+      - run: nix build -L '.#checks.x86_64-linux.vm-${{ matrix.test }}'
