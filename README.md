@@ -3,14 +3,14 @@
 Nix packages and NixOS modules for the Zcash ecosystem, built from pinned source.
 
 nixpkgs ships one Zcash node: `zcash` 5.4.2, which is zcashd, which is sunset.
-Zebra, the indexers and Zallet have no nixpkgs attribute at all.
+Zakura, Zebra, the indexers and Zallet have no nixpkgs attribute at all.
 
 ## Packages
 
 | | | binaries |
 |---|---|---|
-| **zebra** | Zcash Foundation's Zcash node | `zebrad` |
 | **zakura** | Zcash full node built for scale | `zakurad`, `zakura-prune-state`, `zakura-rollback-state` |
+| **zebra** | Zcash Foundation's Zcash node | `zebrad` |
 | **zinder** | ZF's service-oriented indexer | `zinder-ingest`, `-projector`, `-query`, `-compat-lightwalletd` |
 | **zaino** | Zingo Labs' indexer and proxy | `zainod` |
 | **zallet** | RPC wallet replacing zcashd's | `zallet` + its `zallet-zebra` backend |
@@ -23,7 +23,7 @@ five releases behind.
 ## Use
 
 ```console
-$ nix run github:cypherpunktech/zcash.nix#zebra -- --version
+$ nix run github:cypherpunktech/zcash.nix#zakura -- --version
 ```
 
 ```nix
@@ -42,9 +42,9 @@ nixpkgs.overlays = [ zcash-nix.overlays.default ];
 ```nix
 imports = [ zcash-nix.nixosModules.default ];
 
-services.zcash.zebra = {
+services.zcash.zakura = {
   enable = true;
-  settings.rpc.listen_addr = "127.0.0.1:8232";   # freeform zebrad.toml
+  settings.rpc.listen_addr = "127.0.0.1:8232";   # freeform zakura.toml
 };
 ```
 
