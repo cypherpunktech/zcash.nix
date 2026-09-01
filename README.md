@@ -102,6 +102,10 @@ from the internet, running as root because that is what the blog post did.
 }
 ```
 
+Modules exist for every packaged service: `zebra`, `zakura`, `zaino`, `zinder`,
+`lightwalletd` and `zallet` — six modules, nine systemd units, since `zinder`
+runs four cooperating runtimes.
+
 Every service runs under `DynamicUser` with an empty `CapabilityBoundingSet`,
 `ProtectSystem=strict`, a private `StateDirectory` at mode 0700, a syscall
 filter, and `MemoryDenyWriteExecute`. That block lives in one file,
@@ -113,7 +117,7 @@ somewhere.
 so every option zebrad has is available and nothing here has to be updated when
 upstream adds a field.
 
-Two deliberate refusals:
+Three deliberate refusals:
 
 - **`openFirewall` never opens the RPC port**, only peer-to-peer. RPC is an
   administrative interface; a node exposing it to the internet is a node
@@ -121,6 +125,19 @@ Two deliberate refusals:
 - **lightwalletd will not start without TLS unless you say `insecureNoTLS =
   true`.** A wallet's queries reveal what it is looking for, so plaintext
   defeats much of the point of using Zcash. The module refuses to guess.
+- **`zallet` will not enable without `acceptBetaRisk = true`.** It holds
+  spending keys, its authors advise against significant funds, and upstream
+  itself refuses to generate a config without an explicit beta acknowledgement.
+  Wrapping that in a friendly one-liner would launder a warning they went out of
+  their way to make unmissable. It also does not initialise a wallet for you:
+  generating an encryption identity and a mnemonic are irreversible and belong
+  to a human with somewhere safe to put the result.
+
+One documented deviation: `zinder`'s four runtimes share a storage tree, and
+`DynamicUser` allocates a different uid per service — so they cannot share a
+directory. They run as one static `zinder` user instead. That is forced by the
+software's design rather than chosen, and a test asserts it stays confined to
+`zinder` rather than spreading.
 
 The modules are covered by NixOS VM tests that boot a machine, start the
 service, query its RPC, and assert the hardening is actually applied — not just

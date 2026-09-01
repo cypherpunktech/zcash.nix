@@ -16,8 +16,13 @@ check: stage
 eval: stage
     nix flake check --all-systems --no-build
 
+# --no-cache is not paranoia. treefmt caches by mtime, so a plain `nix fmt` can
+# report "0 changed" on files it has already seen while checks.formatting --
+# which runs fresh in a sandbox with no cache -- fails on the same tree. Bitten
+# live: the local gate said clean and CI said otherwise. Local and CI must be
+# asking the same question or the local one is worthless.
 fmt: stage
-    nix fmt
+    nix fmt -- --no-cache
 
 build PKG: stage
     nix build -L .#{{ PKG }}

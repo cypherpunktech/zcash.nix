@@ -3,9 +3,7 @@
 # The pairing is the point: lightwalletd is useless alone, and the failure this
 # catches -- a backend it cannot reach, or credentials it cannot read -- only
 # appears when both units exist together.
-self:
-_:
-{
+self: _: {
   name = "zcash-lightwalletd";
 
   nodes.machine = {

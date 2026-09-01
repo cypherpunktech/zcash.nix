@@ -6,9 +6,7 @@
 # directory, a config the daemon rejects, a hardening flag that kills it on
 # first syscall -- produces a package that passes smoke and a machine that does
 # not boot a working node.
-self:
-_:
-{
+self: _: {
   name = "zcash-zebra";
 
   nodes.machine = {

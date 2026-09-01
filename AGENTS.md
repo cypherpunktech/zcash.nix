@@ -81,6 +81,13 @@ other direction either. The README's support table states what CI really built.
   forces every package's drvPath — so an unavailable package is an eval error,
   not a skip. That is why `packages.<system>` is filtered by availability in
   `flake.nix` and the overlay is not.
+- **`nix fmt` can report clean while `checks.formatting` fails.** treefmt caches
+  by mtime; the check derivation runs fresh in a sandbox with no cache. Use
+  `just fmt`, which passes `--no-cache`, or the local gate is asking a different
+  question from CI and is worth nothing.
+- **`nix fmt` reformats the `tests/` files' argument lists.** They are functions
+  of two arguments, and nixfmt collapses `self:\n_: {` onto one line. Harmless,
+  but it is why a freshly written test file always shows as changed once.
 - **A join derivation still needs `src`.** `packages/zallet` copies two builds
   together and has nothing to unpack, but without `src` the staleness gate cannot
   see what it is pinned to and the package goes silently unwatched.
