@@ -1,46 +1,127 @@
-# Bit-for-bit reproducibility check, on demand.
+# The bit-for-bit reproducibility gate.
 #
-# Builds a package, then builds it again with --rebuild, which makes nix
-# compare the second output byte-for-byte against the first and fail if they
-# differ. Run it several times: a build that is flaky rather than systematically
-# different can pass once and fail the next.
+# check.yml proves a package builds and runs. This proves that building it
+# AGAIN yields the same bytes: `nix build --rebuild` makes nix rebuild a
+# derivation whose output already exists and fail if the new output differs.
+# With Cachix in front, the first build here is a download, so the rebuild is
+# compared against a binary produced on a DIFFERENT machine -- cross-machine
+# reproducibility for the price of one build. Every rebuild is one more full
+# cold build though (there is nothing to cache), which is why this is its own
+# workflow with its own cadence rather than a flag on check.yml: the gate's
+# cost must be one number in one place.
+#
+# Several rebuilds, not one. A systematic difference fails every time; the
+# flaky kind -- parallel codegen, a hash-map iteration order -- passes two
+# times in three, and a single pass is then evidence of nothing.
+#
+# When it fails it has to say more than "differs": which package, which
+# rebuild, which file, which ELF section, and it keeps both binaries so a
+# human can diffoscope them. A red job that costs a second build to
+# understand is a red job that gets ignored.
 #
 # Linux only, deliberately. Sandboxed Linux builds run in a constant /build
 # directory; darwin builds run in /nix/var/nix/builds/nix-<pid>-<random>, so
-# anything that embeds the build path -- rustc debuginfo, C __FILE__ strings,
-# cargo metadata hashes -- differs there for reasons unrelated to the package.
-# This workflow answers "is the package reproducible", not "is darwin".
+# anything that embeds the build path -- rustc panic paths, C __FILE__ strings,
+# ld64's debug-map stabs -- differs there unless remapped. flake.nix remaps
+# all three; this workflow answers "is the package reproducible" on the
+# platform where none of that is in play, so a failure here is the package.
+#
+# Runs (see the cost table in the commit adding this): the schedule sweeps
+# every package with three rebuilds, monthly, on x86_64-linux -- about 580
+# runner-minutes, a third of the free plan. A PR labelled `repro` and a manual
+# dispatch get every target discover.yml enables, because a human asked.
 name: repro
 
 permissions:
   contents: read
 
 on:
+  schedule:
+    - cron: "17 5 2 * *"
+  pull_request:
+    types: [labeled, synchronize]
   workflow_dispatch:
     inputs:
-      package:
-        description: Package attribute to check
-        required: true
-        default: zaino
+      packages:
+        description: Comma-separated package attributes; empty means all
+        required: false
+        default: ""
       runs:
-        description: How many --rebuild passes (flaky failures need more than one)
+        description: How many --rebuild passes per package (flaky failures need more than one)
         required: true
         default: "3"
 
+# A superseded PR run is worthless, as in check.yml. Nothing else overlaps:
+# a schedule and a dispatch on main share one group and simply queue.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  repro:
+  # The label is the PR's opt-in, and it is read two ways because the two
+  # events carry it differently: `labeled` says which label was just added,
+  # `synchronize` only says which labels the PR has.
+  discover:
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.action == 'labeled' && github.event.label.name == 'repro') ||
+      (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'repro'))
+    uses: ./.github/workflows/discover.yml
+
+  # Narrows discover's matrix before it fans out, because a job-level `if`
+  # cannot see `matrix` and a skipped combination would still cost a runner
+  # start. The schedule pays for the cheapest arch only; the two human
+  # triggers get whatever discover.yml enables. The dispatch package list is
+  # matched whole, so `zebra` cannot select `zebra-utils`.
+  select:
+    needs: discover
     runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.pick.outputs.packages }}
+      targets: ${{ steps.pick.outputs.targets }}
+    steps:
+      - id: pick
+        env:
+          PACKAGES: ${{ needs.discover.outputs.packages }}
+          TARGETS: ${{ needs.discover.outputs.targets }}
+          WANTED: ${{ inputs.packages }}
+          SCHEDULED: ${{ github.event_name == 'schedule' }}
+        run: |
+          packages=$(jq -c --arg wanted "$WANTED" \
+            '[.[] | select($wanted == "" or IN($wanted | split(",")[] | ltrimstr(" ") | rtrimstr(" ")))]' <<<"$PACKAGES")
+          targets=$(jq -c --argjson scheduled "$SCHEDULED" \
+            '[.[] | select(($scheduled | not) or .system == "x86_64-linux")]' <<<"$TARGETS")
+          echo "packages=$packages" >> "$GITHUB_OUTPUT"
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+          echo "packages: $packages"
+          echo "targets: $targets"
+
+  repro:
+    needs: select
+    name: ${{ matrix.package }} · ${{ matrix.target.system }}
+    runs-on: ${{ matrix.target.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.select.outputs.packages) }}
+        target: ${{ fromJSON(needs.select.outputs.targets) }}
+    # `bash` here is not the default shell: it is the one that sets
+    # -o pipefail, which the `nix build | tee` below depends on to fail.
+    defaults:
+      run:
+        shell: bash
     env:
       CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      RUNS: ${{ inputs.runs || 3 }}
+      LABEL: ${{ matrix.package }} · ${{ matrix.target.system }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
       - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
-      # Pull only. If the first build substitutes from the cache, the rebuild
-      # compares this runner's output against a build from a DIFFERENT
-      # machine, which is a stronger result than two builds on one box.
+      # Pull only. This job checks binaries; producing them is check.yml's job,
+      # and a gate that also feeds the cache it compares against is circular.
       - name: Cachix
         if: env.CACHIX_AUTH_TOKEN != ''
         uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
@@ -49,21 +130,78 @@ jobs:
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
           skipPush: true
 
-      - name: Build
-        run: nix build -L '.#${{ inputs.package }}' --no-link --print-out-paths
+      # The derivations whose bytes the claim is about. Usually the package
+      # itself; a package that is a join of several builds (zallet) names them
+      # in passthru.parts, because rebuilding the join only rebuilds a `cp` and
+      # would pass while the compilers underneath drift. A package absent from
+      # this system's set claims not to build here, so there is nothing to
+      # rebuild -- announced, not silent, as in check.yml.
+      - name: What to rebuild
+        id: targets
+        run: |
+          targets=$(nix eval --json '.#packages.${{ matrix.target.system }}' --apply \
+            'p: map (d: d.drvPath) (if p ? ${{ matrix.package }} then p.${{ matrix.package }}.parts or [ p.${{ matrix.package }} ] else [ ])')
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+          echo "$targets"
+          if [ "$targets" = "[]" ]; then
+            echo "::notice title=Not checked::${{ matrix.package }} does not claim ${{ matrix.target.system }} — see meta.badPlatforms in packages/${{ matrix.package }}/default.nix"
+          fi
 
+      # From the cache if it is there, from source if not. Either way the
+      # output must be valid before --rebuild has anything to compare against.
+      - name: Build or fetch the reference
+        if: steps.targets.outputs.targets != '[]'
+        env:
+          TARGETS: ${{ steps.targets.outputs.targets }}
+        run: |
+          for drv in $(jq -r '.[]' <<<"$TARGETS"); do
+            nix build -L --no-link "$drv^out"
+          done
+
+      # A rebuild can fail two ways and they mean opposite things: "may not be
+      # deterministic" is the finding this job exists for; anything else is a
+      # broken build, which check.yml owns. Only the former has a `.check`
+      # tree to explain, kept beside the output by --keep-failed.
       - name: Rebuild and compare
+        if: steps.targets.outputs.targets != '[]'
+        env:
+          TARGETS: ${{ steps.targets.outputs.targets }}
         run: |
           fails=0
-          for i in $(seq 1 "${{ inputs.runs }}"); do
-            echo "::group::rebuild $i of ${{ inputs.runs }}"
-            if nix build -L '.#${{ inputs.package }}' --rebuild --no-link; then
-              echo "rebuild $i: identical"
-            else
-              echo "rebuild $i: DIFFERS"
-              fails=$((fails + 1))
-            fi
-            echo "::endgroup::"
+          for drv in $(jq -r '.[]' <<<"$TARGETS"); do
+            out=$(nix build --no-link --print-out-paths "$drv^out")
+            name=${out#/nix/store/*-}
+            for i in $(seq 1 "$RUNS"); do
+              echo "::group::$name rebuild $i of $RUNS"
+              if nix build -L --no-link --rebuild --keep-failed "$drv^out" 2>&1 | tee rebuild.log; then
+                echo "$name rebuild $i: identical"
+              elif grep -q 'may not be deterministic' rebuild.log; then
+                fails=$((fails + 1))
+                echo "::error title=$LABEL::$name rebuild $i of $RUNS differs from the reference"
+                mkdir -p "evidence/$name"
+                [ -e "evidence/$name/reference" ] || cp -r "$out" "evidence/$name/reference"
+                cp -r "$out.check" "evidence/$name/rebuild-$i"
+                { echo "## $LABEL — $name, rebuild $i of $RUNS differs"; ./scripts/repro-diff.sh "$out" "$out.check"; } | tee -a "$GITHUB_STEP_SUMMARY"
+              else
+                echo "::error title=$LABEL::$name rebuild $i did not finish — a build failure, not a reproducibility verdict"
+                exit 1
+              fi
+              echo "::endgroup::"
+            done
           done
-          echo "::notice title=${{ inputs.package }} reproducibility::$((${{ inputs.runs }} - fails)) of ${{ inputs.runs }} rebuilds identical"
+          if [ "$fails" -eq 0 ]; then
+            echo "- $LABEL: $RUNS of $RUNS rebuilds identical" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "::notice title=$LABEL reproducibility::$fails differing rebuild(s)"
           [ "$fails" -eq 0 ]
+
+      # Both trees, so the finding can be examined with diffoscope offline.
+      # Two weeks: evidence is for acting on, not archiving.
+      - name: Keep the evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: repro-${{ matrix.package }}-${{ matrix.target.system }}
+          path: evidence
+          if-no-files-found: ignore
+          retention-days: 14

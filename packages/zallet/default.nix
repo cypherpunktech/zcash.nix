@@ -98,6 +98,13 @@ stdenvNoCC.mkDerivation {
   # the sibling lookup resolves -- rather than merely that a binary can print.
   # A launcher packaged without its backend passes `nix build` and fails here.
   passthru.smokeArgs = [ "--version" ];
+  # What repro.yml rebuilds. Rebuilding this derivation only re-runs the two
+  # `cp`s above, which reproduce trivially while saying nothing about the
+  # compilers underneath.
+  passthru.parts = [
+    launcher
+    backend
+  ];
 
   meta = {
     description = "RPC wallet replacing the deprecated zcashd embedded wallet";

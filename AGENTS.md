@@ -151,9 +151,12 @@ Nothing caught it because nothing tests a platform you never build.
 - **`nix fmt` reformats the `tests/` files' argument lists.** They are functions
   of two arguments, and nixfmt collapses `self:\n_: {` onto one line. Harmless,
   but it is why a freshly written test file always shows as changed once.
-- **A join derivation still needs `src`.** `packages/zallet` copies two builds
-  together and has nothing to unpack, but without `src` the staleness gate cannot
-  see what it is pinned to and the package goes silently unwatched.
+- **A join derivation still needs `src`, and `passthru.parts`.** `packages/zallet`
+  copies two builds together and has nothing to unpack, but without `src` the
+  staleness gate cannot see what it is pinned to and the package goes silently
+  unwatched. Likewise `nix build --rebuild` of the join rebuilds only the `cp`,
+  so `repro.yml` would pass it forever; `parts` names the derivations whose
+  bytes the reproducibility claim is actually about.
 
 ## Reproducibility, and how it was lost three times before it was found
 
