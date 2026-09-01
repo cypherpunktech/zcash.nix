@@ -56,8 +56,16 @@ rustPlatform.buildRustPackage {
   #
   # This is why lightwalletd reproduces and the Rust packages do not:
   # buildGoModule passes -trimpath, and buildRustPackage has no equivalent.
+  # Two flags because two compilers embed the path. rustc needs
+  # --remap-path-prefix; the C sources that -sys crates compile through the
+  # `cc` crate need -ffile-prefix-map, and rustc's flag does nothing for them.
+  # Measured: the rust flag alone remapped 1077 paths and left 81, all of them
+  # __FILE__ strings from aws-lc-sys and lmdb-sys.
   preBuild = ''
-    export RUSTFLAGS="''${RUSTFLAGS:-} --remap-path-prefix=$NIX_BUILD_TOP=/zcash-nix-build"
+    remap="$NIX_BUILD_TOP=/zcash-nix-build"
+    export RUSTFLAGS="''${RUSTFLAGS:-} --remap-path-prefix=$remap"
+    export CFLAGS="''${CFLAGS:-} -ffile-prefix-map=$remap"
+    export CXXFLAGS="''${CXXFLAGS:-} -ffile-prefix-map=$remap"
   '';
 
   doCheck = false;
