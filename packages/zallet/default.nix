@@ -76,6 +76,12 @@ stdenvNoCC.mkDerivation {
   pname = "zallet";
   inherit version;
 
+  # This derivation only copies two other derivations' binaries together, so it
+  # has nothing to unpack -- but it still carries `src`, because src.rev is how
+  # check-staleness.sh and update.yml learn what this package is pinned to. A
+  # package that cannot state its own provenance is a package the staleness
+  # gate cannot check, which is worse than one that is merely out of date.
+  inherit src;
   dontUnpack = true;
 
   installPhase = ''
