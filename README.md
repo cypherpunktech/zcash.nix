@@ -102,9 +102,13 @@ from the internet, running as root because that is what the blog post did.
 }
 ```
 
-Modules exist for every packaged service: `zebra`, `zakura`, `zaino`, `zinder`,
-`lightwalletd` and `zallet` — six modules, nine systemd units, since `zinder`
-runs four cooperating runtimes.
+Every packaged service has a module: `zebra`, `zakura`, `zaino`, `zinder`,
+`lightwalletd`, `zallet` and `zpay` — seven modules, ten systemd units, since
+`zinder` runs four cooperating runtimes.
+
+Two binaries are deliberately never auto-started, because both hold spend
+authority: `zspend-runtime` (shipped with `zpay`) and any wallet you have not
+initialised yourself.
 
 Every service runs under `DynamicUser` with an empty `CapabilityBoundingSet`,
 `ProtectSystem=strict`, a private `StateDirectory` at mode 0700, a syscall

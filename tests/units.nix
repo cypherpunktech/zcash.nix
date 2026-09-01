@@ -33,6 +33,7 @@ self: _: {
         enable = true;
         acceptBetaRisk = true;
       };
+      zpay.enable = true;
     };
 
     virtualisation.memorySize = 3072;
@@ -40,7 +41,7 @@ self: _: {
 
   testScript = ''
     services = [
-        "zebra", "zakura", "zaino", "lightwalletd", "zallet",
+        "zebra", "zakura", "zaino", "lightwalletd", "zallet", "zpay",
         "zinder-ingest", "zinder-projector", "zinder-query",
         "zinder-compat-lightwalletd",
     ]
@@ -78,7 +79,7 @@ self: _: {
     # everything else gets its own DynamicUser identity. If a future edit
     # flipped zebra to a static user, or zinder to DynamicUser (which would
     # break its shared state), this catches it.
-    for s in ["zebra", "zakura", "zaino", "lightwalletd", "zallet"]:
+    for s in ["zebra", "zakura", "zaino", "lightwalletd", "zallet", "zpay"]:
         out = machine.succeed(f"systemctl show {s}.service -p DynamicUser")
         assert "DynamicUser=yes" in out, f"{s} should use DynamicUser: {out}"
 
