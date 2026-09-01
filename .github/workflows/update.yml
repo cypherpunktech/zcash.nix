@@ -62,11 +62,25 @@ jobs:
       # `--version=` here is nix-update's TARGET, not a request to print its own.
       - name: Bump the pin
         run: |
-          case "$(nix eval --raw '.#${{ matrix.package }}.src.rev')" in
-            refs/tags/*) target=stable ;;
-            *)           target=branch ;;
-          esac
-          echo "bumping ${{ matrix.package }} toward: $target"
+          rev=$(nix eval --raw '.#${{ matrix.package }}.src.rev')
+          tag=${rev#refs/tags/}
+          if [ "$tag" = "$rev" ]; then
+            # Not a tag at all: a bare commit, because upstream cuts no releases.
+            target=branch
+          elif [[ "$tag" =~ [0-9][-+][0-9A-Za-z.-]+$ ]]; then
+            # A semver pre-release or build suffix after the version core, e.g.
+            # v0.1.0-beta.3. GitHub does not flag these as prereleases and
+            # check-staleness.sh therefore treats them as current, but
+            # nix-update applies semver rules and refuses them under `stable`
+            # with "Found an unstable version ... please use '--version=unstable'".
+            # Two tools, two definitions of stable; this is where they are
+            # reconciled. The [0-9] before the separator is load-bearing: it
+            # keeps a name like zebra-utils-v10.0.1 out of this branch.
+            target=unstable
+          else
+            target=stable
+          fi
+          echo "bumping ${{ matrix.package }} (tag: $tag) toward: $target"
           nix develop --command nix-update --flake --version="$target" '${{ matrix.package }}'
 
       - name: Did anything change?
