@@ -14,7 +14,7 @@ self: _: {
     {
       imports = [ self.nixosModules.zebra ];
 
-      services.zcash.zebra = {
+      services.zcash.zebra.regtest = {
         enable = true;
         settings = {
           network = {
@@ -43,10 +43,10 @@ self: _: {
     };
 
   testScript = ''
-    machine.wait_for_unit("zebra.service")
+    machine.wait_for_unit("zebra-regtest.service")
 
     # Running, not merely started-and-exited: a crash loop also "starts".
-    machine.wait_until_succeeds("systemctl is-active --quiet zebra.service", timeout=60)
+    machine.wait_until_succeeds("systemctl is-active --quiet zebra-regtest.service", timeout=60)
 
     # It answers RPC, which means it got through config parsing and opened its
     # state directory -- the two things a broken module actually breaks.
@@ -61,7 +61,7 @@ self: _: {
     # DynamicUser or relaxes ProtectSystem, this fails rather than quietly
     # shipping a node running as root.
     props = machine.succeed(
-        "systemctl show zebra.service "
+        "systemctl show zebra-regtest.service "
         "-p DynamicUser -p ProtectSystem -p NoNewPrivileges -p CapabilityBoundingSet"
     )
     assert "DynamicUser=yes" in props, props
@@ -70,21 +70,21 @@ self: _: {
     assert "CapabilityBoundingSet=" in props, props
 
     # State landed in the StateDirectory and is private to the service.
-    machine.succeed("test -d /var/lib/zebra")
+    machine.succeed("test -d /var/lib/zebra-regtest")
 
     # -L is load-bearing, and the reason is worth knowing: under DynamicUser
-    # systemd puts the real directory at /var/lib/private/zebra and makes
-    # /var/lib/zebra a symlink to it. `stat` does not follow symlinks by
+    # systemd puts the real directory at /var/lib/private/zebra-regtest and makes
+    # /var/lib/zebra-regtest a symlink to it. `stat` does not follow symlinks by
     # default, so without -L this reads the symlink's own mode, which is always
     # 777, and the assertion fails while the actual directory is 0700.
     #
     # The value is interpolated into the message rather than compared inside
     # the shell: `test $(...) = 700` fails without ever saying what it saw,
     # which cost a CI round trip to work out.
-    mode = machine.succeed("stat -Lc %a /var/lib/zebra").strip()
-    assert mode == "700", f"/var/lib/zebra is mode {mode}, expected 700"
+    mode = machine.succeed("stat -Lc %a /var/lib/zebra-regtest").strip()
+    assert mode == "700", f"/var/lib/zebra-regtest is mode {mode}, expected 700"
 
     # Not running as root.
-    machine.fail("systemctl show zebra.service -p User | grep -q 'User=root'")
+    machine.fail("systemctl show zebra-regtest.service -p User | grep -q 'User=root'")
   '';
 }

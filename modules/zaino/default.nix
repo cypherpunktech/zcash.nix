@@ -1,4 +1,4 @@
-# services.zcash.zaino — Zingo Labs' Zcash indexer, as a systemd service.
+# services.zcash.zaino.<instance> — Zingo Labs' Zcash indexer, as a systemd service.
 #
 # Not built on ../node.nix: zaino is not a node. It is an indexer that talks to
 # one, its config sections are entirely different, and it takes `-c` on a
@@ -13,78 +13,97 @@ self:
   ...
 }:
 let
-  cfg = config.services.zcash.zaino;
+  name = "zaino";
+  service = import ../service.nix {
+    inherit
+      lib
+      self
+      pkgs
+      name
+      ;
+    description = "Zaino, an indexer for the Zcash blockchain";
+  };
+  instances = service.enabled config.services.zcash.zaino;
   toml = pkgs.formats.toml { };
-  stateDir = "/var/lib/zaino";
-  configFile = toml.generate "zainod.toml" cfg.settings;
+
+  instance =
+    { name, ... }:
+    let
+      stateDir = "/var/lib/zaino-${name}";
+    in
+    {
+      options = service.options // {
+        settings = lib.mkOption {
+          inherit (toml) type;
+          default = { };
+          example = lib.literalExpression ''
+            {
+              grpc_settings.listen_address = "127.0.0.1:8137";
+              validator_settings.validator_jsonrpc_listen_address = "127.0.0.1:8232";
+            }
+          '';
+          description = ''
+            Contents of `zainod.toml`, as a Nix attribute set. Generate a
+            reference with `zainod generate-config -o -`.
+
+            `storage.database.path` defaults to the instance's state directory.
+          '';
+        };
+
+        openFirewall = lib.mkOption {
+          type = lib.types.bool;
+          default = false;
+          description = ''
+            Open the gRPC port in the firewall.
+
+            Off by default. An indexer answers questions about which
+            transactions concern which viewing keys; who can ask it is a
+            privacy decision, not a convenience one.
+          '';
+        };
+      };
+
+      # Its own default is a home-directory cache, which ProtectHome hides.
+      config.settings.storage.database.path = lib.mkDefault stateDir;
+    };
 in
 {
-  options.services.zcash.zaino = {
-    enable = lib.mkEnableOption "Zaino, an indexer for the Zcash blockchain";
-
-    package = lib.mkOption {
-      type = lib.types.package;
-      default = self.packages.${pkgs.stdenv.hostPlatform.system}.zaino;
-      defaultText = lib.literalExpression "zcash-nix.packages.\${system}.zaino";
-      description = "The zaino package to run.";
-    };
-
-    settings = lib.mkOption {
-      inherit (toml) type;
-      default = { };
-      example = lib.literalExpression ''
-        {
-          grpc_settings.listen_address = "127.0.0.1:8137";
-          validator_settings.validator_jsonrpc_listen_address = "127.0.0.1:8232";
-        }
-      '';
-      description = ''
-        Contents of `zainod.toml`, as a Nix attribute set. Generate a reference
-        with `zainod generate-config -o -`.
-
-        `storage.database.path` defaults to the service's StateDirectory.
-      '';
-    };
-
-    openFirewall = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-      description = ''
-        Open the gRPC port in the firewall.
-
-        Off by default. An indexer answers questions about which transactions
-        concern which viewing keys; who can ask it is a privacy decision, not a
-        convenience one.
-      '';
-    };
+  options.services.zcash.zaino = lib.mkOption {
+    type = lib.types.attrsOf (lib.types.submodule instance);
+    default = { };
+    description = "Zaino indexer instances, each its own unit and state directory.";
   };
 
-  config = lib.mkIf cfg.enable {
-    # Its own default is a home-directory cache, which ProtectHome hides.
-    services.zcash.zaino.settings.storage.database.path = lib.mkDefault stateDir;
+  config = lib.mkIf (instances != { }) {
+    systemd.services = lib.mapAttrs' (
+      instanceName: cfg:
+      lib.nameValuePair "zaino-${instanceName}" {
+        description = "Zaino Zcash indexer (${instanceName})";
+        documentation = [ "https://github.com/zingolabs/zaino" ];
+        wantedBy = [ "multi-user.target" ];
+        after = [ "network-online.target" ];
+        wants = [ "network-online.target" ];
+        serviceConfig = service.identity cfg "zaino-${instanceName}" // {
+          ExecStart = lib.escapeShellArgs (
+            [
+              (lib.getExe cfg.package)
+              "start"
+              "--config"
+              (toml.generate "zainod-${instanceName}.toml" cfg.settings)
+            ]
+            ++ cfg.extraArgs
+          );
+        };
+      }
+    ) instances;
 
-    systemd.services.zaino = {
-      description = "Zaino Zcash indexer";
-      documentation = [ "https://github.com/zingolabs/zaino" ];
-      wantedBy = [ "multi-user.target" ];
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
+    users = service.users instances;
 
-      serviceConfig = (import ../hardening.nix) // {
-        ExecStart = "${lib.getExe cfg.package} start --config ${configFile}";
-        DynamicUser = true;
-        StateDirectory = "zaino";
-        StateDirectoryMode = "0700";
-      };
-    };
-
-    networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [
-      (
-        let
-          addr = cfg.settings.grpc_settings.listen_address or "127.0.0.1:8137";
-        in
-        lib.toInt (lib.last (lib.splitString ":" addr))
+    networking.firewall.allowedTCPPorts = lib.concatMap (
+      cfg:
+      lib.optional cfg.openFirewall (
+        service.portOf (cfg.settings.grpc_settings.listen_address or "127.0.0.1:8137")
       )
-    ];
+    ) (lib.attrValues instances);
   };
 }

@@ -32,22 +32,31 @@ Every derivation must set:
 ## Adding a NixOS module
 
 Same rule as packages: `modules/<name>/default.nix`, found by `readDir`. Plain
-`.nix` files beside them (`hardening.nix`, `node.nix`) are skipped by the
-directory filter — shared code must not become a module by accident.
+`.nix` files beside them (`service.nix`, `hardening.nix`, `node.nix`,
+`lightwallet.nix`) are skipped by the directory filter — shared code must not
+become a module by accident.
 
 A module is a function of `self`, so `package` can default to this flake's
 build with no overlay and no second place naming which package a service runs.
 
-Import the shared hardening rather than writing your own:
+`modules/service.nix` is the shape every service shares: the options all of
+them carry (`enable`, `package`, `extraArgs`, `user`) and `identity`, which
+resolves `user` into the hardened `serviceConfig` -- an allocated DynamicUser
+by default, or a static user it creates. Nodes and indexers are
+multi-instance (`services.zcash.<name>.<instance>` → unit `<name>-<instance>`,
+state `/var/lib/<name>-<instance>`), the nixpkgs `services.bitcoind.<name>`
+shape, because mainnet and testnet on one host is the ordinary developer
+setup and the option path is the API: it could not be changed after launch
+without breaking every user. Wallets are single-instance.
 
-```nix
-serviceConfig = (import ../hardening.nix) // { ... };
-```
+A submodule under `attrsOf` receives its key as `name` -- only if the
+function destructures `{ name, ... }`; `args: args.name` gets nothing,
+because `_module.args` are injected per named parameter. Bitten live.
 
-If a service genuinely cannot use it, say so where someone will hit it and add
-an assertion to `tests/units.nix` so the deviation stays confined. `zinder` is
-the worked example: its four runtimes share a storage tree, and `DynamicUser`
-allocates a different uid per service, so they run as one static user instead.
+A service that cannot use DynamicUser (zinder: four runtimes, one tree)
+defaults `user` to a static name and asserts it is not null. `tests/units.nix`
+asserts identity and hardening for every unit, including one deliberately
+shared user, so a deviation is confined by a test rather than a comment.
 
 **Refuse to guess on security-relevant defaults.** Three modules already do:
 `openFirewall` never opens RPC, `lightwalletd` will not start without TLS

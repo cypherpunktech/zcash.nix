@@ -1,17 +1,19 @@
 # One machine with every service module enabled, asserting the properties that
 # must hold for all of them.
 #
-# Why this exists alongside the per-service tests: zebra and lightwalletd can
-# be driven to a healthy state in a VM, but zaino, zinder and zallet cannot
-# without a synced chain or an initialised wallet. Writing "wait_for_unit" tests
-# for those would produce tests that fail for reasons unrelated to the module.
+# Why this exists alongside the per-service tests: zebra, ztreamer and the two
+# lightwalletds can be driven to a healthy state in a VM, but zaino, zinder and
+# zallet cannot without a synced chain or an initialised wallet. Writing
+# "wait_for_unit" tests for those would produce tests that fail for reasons
+# unrelated to the module.
 #
 # What CAN be asserted for all of them, and is exactly where module bugs live:
 # that the units are well-formed, that nothing runs as root, and that the
 # hardening in modules/hardening.nix actually reached every service. Those are
-# checked here mechanically, so a module added later is covered the moment
-# someone adds it to this list -- and the deviations are asserted too, so
-# zinder's static user cannot silently spread to the others.
+# checked here mechanically. Two shapes are exercised on purpose: zebra runs
+# two instances (the reason the modules are multi-instance), and one of them
+# shares a static user with zallet (the reason `user` exists), so the identity
+# rules of modules/service.nix are asserted rather than assumed.
 self: _: {
   name = "zcash-units";
 
@@ -19,37 +21,52 @@ self: _: {
     imports = [ self.nixosModules.default ];
 
     services.zcash = {
-      zebra.enable = true;
-      zakura.enable = true;
-      zaino.enable = true;
-      zinder.enable = true;
-      lightwalletd = {
+      zebra.mainnet.enable = true;
+      # A second instance, sharing its identity with the wallet that reads
+      # its state database.
+      zebra.shared = {
+        enable = true;
+        user = "zcash-shared";
+      };
+      zakura.main.enable = true;
+      zaino.main.enable = true;
+      zinder.main.enable = true;
+      ztreamer.main.enable = true;
+      lightwalletd.main = {
         enable = true;
         insecureNoTLS = true;
         rpcUser = "test";
         rpcPassword = "test";
       };
-      zallet = {
-        enable = true;
-        acceptBetaRisk = true;
-      };
-      zpay.enable = true;
-      ztreamer.enable = true;
-      lightwalletd-rs = {
+      lightwalletd-rs.main = {
         enable = true;
         insecureNoTLS = true;
       };
+      zallet = {
+        enable = true;
+        acceptBetaRisk = true;
+        user = "zcash-shared";
+      };
+      zpay.enable = true;
     };
 
     virtualisation.memorySize = 3072;
   };
 
   testScript = ''
-    services = [
-        "zebra", "zakura", "zaino", "lightwalletd", "zallet", "zpay", "ztreamer",
-        "lightwalletd-rs", "zinder-ingest", "zinder-projector", "zinder-query",
-        "zinder-compat-lightwalletd",
+    dynamic = [
+        "zebra-mainnet", "zakura-main", "zaino-main", "ztreamer-main",
+        "lightwalletd-main", "lightwalletd-rs-main", "zpay",
     ]
+    static = {
+        "zebra-shared": "zcash-shared",
+        "zallet": "zcash-shared",
+        "zinder-main-ingest": "zinder-main",
+        "zinder-main-projector": "zinder-main",
+        "zinder-main-query": "zinder-main",
+        "zinder-main-compat-lightwalletd": "zinder-main",
+    }
+    services = dynamic + list(static)
 
     # Well-formed units. systemd-analyze verify catches a malformed ExecStart,
     # an unknown directive, and a typo in a hardening option -- all of which a
@@ -79,18 +96,25 @@ self: _: {
         assert "RestrictNamespaces=yes" in out, f"{s}: {out}"
         assert "ProtectHome=yes" in out, f"{s}: {out}"
 
-    # The documented deviation, asserted so it stays a deviation. Zinder's four
-    # runtimes share a storage tree and therefore share one static user;
-    # everything else gets its own DynamicUser identity. If a future edit
-    # flipped zebra to a static user, or zinder to DynamicUser (which would
-    # break its shared state), this catches it.
-    for s in ["zebra", "zakura", "zaino", "lightwalletd", "zallet", "zpay", "ztreamer", "lightwalletd-rs"]:
+    # Identity, as modules/service.nix defines it: no `user` means an
+    # allocated DynamicUser; a `user` means that static user, created, and
+    # DynamicUser off. zinder's four runtimes default to one static user
+    # because they share a storage tree; a node and a wallet given the same
+    # name share it -- which is the whole point of the option.
+    for s in dynamic:
         out = machine.succeed(f"systemctl show {s}.service -p DynamicUser")
         assert "DynamicUser=yes" in out, f"{s} should use DynamicUser: {out}"
 
-    for s in ["zinder-ingest", "zinder-projector", "zinder-query", "zinder-compat-lightwalletd"]:
+    for s, user in static.items():
         out = machine.succeed(f"systemctl show {s}.service -p DynamicUser -p User")
-        assert "DynamicUser=no" in out, f"{s} must not use DynamicUser (shared state): {out}"
-        assert "User=zinder" in out, f"{s} should run as the shared zinder user: {out}"
+        assert "DynamicUser=no" in out, f"{s} must not use DynamicUser: {out}"
+        assert f"User={user}" in out, f"{s} should run as {user}: {out}"
+        machine.succeed(f"id -u {user}")
+
+    # Two instances of one node are two units with two state directories.
+    machine.succeed("test /var/lib/zebra-mainnet != /var/lib/zebra-shared")
+    for s in ["zebra-mainnet", "zebra-shared"]:
+        out = machine.succeed(f"systemctl show {s}.service -p StateDirectory")
+        assert f"StateDirectory={s}" in out, out
   '';
 }

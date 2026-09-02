@@ -11,6 +11,8 @@
 # the documentation URL. If a future node diverges in structure rather than in
 # those values, it should get its own module instead of an option added here to
 # make one abstraction serve two masters.
+#
+# Multi-instance: `services.zcash.zebra.<instance>`, see ./service.nix.
 {
   self,
   name,
@@ -25,89 +27,115 @@
   ...
 }:
 let
-  cfg = config.services.zcash.${name};
-  toml = pkgs.formats.toml { };
-  stateDir = "/var/lib/${name}";
-
-  # Freeform settings rather than an option per config key: these schemas are
-  # dozens of fields across ten sections and gain more each release. Mirroring
-  # one here would be a second copy that rots the first time upstream adds a
-  # field. Options exist below only where the module must act on the value.
-  configFile = toml.generate "${name}.toml" cfg.settings;
-in
-{
-  options.services.zcash.${name} = {
-    enable = lib.mkEnableOption description;
-
-    package = lib.mkOption {
-      type = lib.types.package;
-      default = self.packages.${pkgs.stdenv.hostPlatform.system}.${name};
-      defaultText = lib.literalExpression "zcash-nix.packages.\${system}.${name}";
-      description = "The ${name} package to run.";
-    };
-
-    settings = lib.mkOption {
-      inherit (toml) type;
-      default = { };
-      example = lib.literalExpression ''
-        {
-          network.network = "Testnet";
-          rpc.listen_addr = "127.0.0.1:8232";
-        }
-      '';
-      description = ''
-        Contents of `${name}.toml`, as a Nix attribute set.
-        `state.cache_dir` defaults to the service's StateDirectory and should
-        normally be left alone.
-      '';
-    };
-
-    openFirewall = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-      description = ''
-        Open the peer-to-peer port in the firewall.
-
-        Deliberately covers only the P2P listener. The RPC port is never
-        opened: it is an administrative interface, and a node exposing it to
-        the internet is a node somebody else is driving.
-      '';
-    };
+  service = import ./service.nix {
+    inherit
+      lib
+      self
+      pkgs
+      name
+      description
+      ;
   };
+  instances = service.enabled config.services.zcash.${name};
+  toml = pkgs.formats.toml { };
+  nodeName = name;
 
-  config = lib.mkIf cfg.enable {
-    # StateDirectory provides the directory; the daemon still has to be told to
-    # use it, because its own default is a home-directory cache that
-    # ProtectHome makes invisible.
-    services.zcash.${name}.settings = {
-      state.cache_dir = lib.mkDefault stateDir;
-      rpc.cookie_dir = lib.mkDefault stateDir;
-    };
+  # A submodule under attrsOf receives its key as `name` -- only when it asks
+  # for it by that exact name, which is why this shadows the node's own.
+  instance =
+    { name, ... }:
+    let
+      stateDir = "/var/lib/${nodeName}-${name}";
+    in
+    {
+      options = service.options // {
+        # Freeform settings rather than an option per config key: these
+        # schemas are dozens of fields across ten sections and gain more each
+        # release. Mirroring one here would be a second copy that rots the
+        # first time upstream adds a field. Options exist only where the
+        # module must act on the value.
+        settings = lib.mkOption {
+          inherit (toml) type;
+          default = { };
+          example = lib.literalExpression ''
+            {
+              network.network = "Testnet";
+              rpc.listen_addr = "127.0.0.1:18232";
+            }
+          '';
+          description = ''
+            Contents of `${nodeName}.toml`, as a Nix attribute set.
+            `state.cache_dir` defaults to the instance's state directory and
+            should normally be left alone.
+          '';
+        };
 
-    systemd.services.${name} = {
-      inherit description documentation;
-      wantedBy = [ "multi-user.target" ];
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
+        openFirewall = lib.mkOption {
+          type = lib.types.bool;
+          default = false;
+          description = ''
+            Open the peer-to-peer port in the firewall.
 
-      serviceConfig = (import ./hardening.nix) // {
-        ExecStart = "${lib.getExe cfg.package} --config ${configFile} start";
-        # DynamicUser: the node needs an identity to own its state and nothing
-        # else. An allocated uid plus a StateDirectory gives exactly that,
-        # without this module creating a permanent account on the host.
-        DynamicUser = true;
-        StateDirectory = name;
-        StateDirectoryMode = "0700";
+            Deliberately covers only the P2P listener. The RPC port is never
+            opened: it is an administrative interface, and a node exposing it
+            to the internet is a node somebody else is driving.
+          '';
+        };
+      };
+
+      # StateDirectory provides the directory; the daemon still has to be told
+      # to use it, because its own default is a home-directory cache that
+      # ProtectHome makes invisible.
+      config.settings = {
+        state.cache_dir = lib.mkDefault stateDir;
+        rpc.cookie_dir = lib.mkDefault stateDir;
       };
     };
+in
+{
+  options.services.zcash.${name} = lib.mkOption {
+    type = lib.types.attrsOf (lib.types.submodule instance);
+    default = { };
+    example = lib.literalExpression ''
+      {
+        mainnet.enable = true;
+        testnet = {
+          enable = true;
+          settings.network.network = "Testnet";
+        };
+      }
+    '';
+    description = "${description}: one entry per instance, each its own unit and state directory.";
+  };
 
-    networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [
-      (
-        let
-          addr = cfg.settings.network.listen_addr or defaultPeerPort;
-        in
-        lib.toInt (lib.last (lib.splitString ":" addr))
-      )
-    ];
+  config = lib.mkIf (instances != { }) {
+    systemd.services = lib.mapAttrs' (
+      instanceName: cfg:
+      lib.nameValuePair "${name}-${instanceName}" {
+        description = "${description} (${instanceName})";
+        inherit documentation;
+        wantedBy = [ "multi-user.target" ];
+        after = [ "network-online.target" ];
+        wants = [ "network-online.target" ];
+        serviceConfig = service.identity cfg "${name}-${instanceName}" // {
+          ExecStart = lib.escapeShellArgs (
+            [
+              (lib.getExe cfg.package)
+              "--config"
+              (toml.generate "${name}-${instanceName}.toml" cfg.settings)
+              "start"
+            ]
+            ++ cfg.extraArgs
+          );
+        };
+      }
+    ) instances;
+
+    users = service.users instances;
+
+    networking.firewall.allowedTCPPorts = lib.concatMap (
+      cfg:
+      lib.optional cfg.openFirewall (service.portOf (cfg.settings.network.listen_addr or defaultPeerPort))
+    ) (lib.attrValues instances);
   };
 }

@@ -34,18 +34,18 @@ self:
 }:
 let
   cfg = config.services.zcash.zallet;
+  service = import ../service.nix {
+    inherit lib self pkgs;
+    name = "zallet";
+    description = "Zallet, the Zcash RPC wallet (BETA — see the warnings in this module)";
+  };
   stateDir = "/var/lib/zallet";
 in
 {
-  options.services.zcash.zallet = {
-    enable = lib.mkEnableOption "Zallet, the Zcash RPC wallet (BETA — see the warnings in this module)";
-
-    package = lib.mkOption {
-      type = lib.types.package;
-      default = self.packages.${pkgs.stdenv.hostPlatform.system}.zallet;
-      defaultText = lib.literalExpression "zcash-nix.packages.\${system}.zallet";
-      description = "The zallet package to run. Ships the launcher and its zebra backend together.";
-    };
+  # Single-instance, unlike the nodes and indexers: one wallet per machine.
+  # `user` matters here more than anywhere: zallet's backend reads the node's
+  # state database directly, so it must run as the same user as that node.
+  options.services.zcash.zallet = service.options // {
 
     acceptBetaRisk = lib.mkOption {
       type = lib.types.bool;
@@ -99,7 +99,10 @@ in
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
 
-      serviceConfig = (import ../hardening.nix) // {
+      # The 0700 state directory service.identity applies is about tidiness
+      # everywhere else. Here it is about spending keys, and the wallet's own
+      # encryption is not a reason to relax it.
+      serviceConfig = service.identity cfg "zallet" // {
         ExecStart = lib.escapeShellArgs (
           [
             (lib.getExe cfg.package)
@@ -109,12 +112,9 @@ in
           ++ cfg.extraArgs
           ++ [ "start" ]
         );
-        DynamicUser = true;
-        StateDirectory = "zallet";
-        # 0700 everywhere else is about tidiness. Here it is about spending
-        # keys, and the wallet's own encryption is not a reason to relax it.
-        StateDirectoryMode = "0700";
       };
     };
+
+    users = service.users { inherit cfg; };
   };
 }

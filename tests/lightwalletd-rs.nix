@@ -15,7 +15,7 @@ self: _: {
         self.nixosModules.lightwalletd-rs
       ];
 
-      services.zcash.zebra = {
+      services.zcash.zebra.regtest = {
         enable = true;
         settings = {
           network = {
@@ -30,7 +30,7 @@ self: _: {
         };
       };
 
-      services.zcash.lightwalletd-rs = {
+      services.zcash.lightwalletd-rs.main = {
         enable = true;
         rpcPort = 18232;
         insecureNoTLS = true;
@@ -40,15 +40,15 @@ self: _: {
     };
 
   testScript = ''
-    machine.wait_for_unit("zebra.service")
+    machine.wait_for_unit("zebra-regtest.service")
     machine.wait_for_open_port(18232)
 
-    machine.wait_for_unit("lightwalletd-rs.service")
-    machine.wait_until_succeeds("systemctl is-active --quiet lightwalletd-rs.service", timeout=60)
+    machine.wait_for_unit("lightwalletd-rs-main.service")
+    machine.wait_until_succeeds("systemctl is-active --quiet lightwalletd-rs-main.service", timeout=60)
     machine.wait_for_open_port(9067)
 
     props = machine.succeed(
-        "systemctl show lightwalletd-rs.service "
+        "systemctl show lightwalletd-rs-main.service "
         "-p DynamicUser -p ProtectSystem -p NoNewPrivileges -p MemoryDenyWriteExecute"
     )
     assert "DynamicUser=yes" in props, props
@@ -56,7 +56,7 @@ self: _: {
     assert "NoNewPrivileges=yes" in props, props
     assert "MemoryDenyWriteExecute=yes" in props, props
 
-    machine.succeed("test -d /var/lib/lightwalletd-rs")
-    machine.succeed("journalctl -u lightwalletd-rs.service --no-pager | head -c 1 | grep -q .")
+    machine.succeed("test -d /var/lib/lightwalletd-rs-main")
+    machine.succeed("journalctl -u lightwalletd-rs-main.service --no-pager | head -c 1 | grep -q .")
   '';
 }

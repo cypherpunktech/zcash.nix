@@ -49,16 +49,26 @@ nixpkgs.overlays = [ zcash-nix.overlays.default ];
 ```nix
 imports = [ zcash-nix.nixosModules.default ];
 
-services.zcash.zakura = {
+services.zcash.zakura.mainnet = {
   enable = true;
   settings.rpc.listen_addr = "127.0.0.1:8232";   # freeform zakura.toml
 };
+services.zcash.zakura.testnet = {
+  enable = true;
+  settings.network.network = "Testnet";
+};
 ```
 
-One module per package. Every service runs under `DynamicUser` with an empty
-`CapabilityBoundingSet`, `ProtectSystem=strict`, a 0700 `StateDirectory`, a
-syscall filter and `MemoryDenyWriteExecute` — see
-[`modules/hardening.nix`](modules/hardening.nix).
+One module per package. Nodes and indexers are multi-instance: each entry
+is its own unit (`zakura-mainnet.service`) with its own state directory
+(`/var/lib/zakura-mainnet`), so mainnet and testnet coexist on one host.
+Wallets (`zallet`, `zpay`) are single. Every service runs under `DynamicUser`
+with an empty `CapabilityBoundingSet`, `ProtectSystem=strict`, a 0700
+`StateDirectory`, a syscall filter and `MemoryDenyWriteExecute` — see
+[`modules/hardening.nix`](modules/hardening.nix). Every service also takes
+`extraArgs`, and `user`: a static user instead of `DynamicUser`, which is
+the one way two services can share a state directory (zallet reading its
+node's database: give both the same `user`).
 
 Three things the modules refuse to guess:
 
@@ -70,8 +80,8 @@ Three things the modules refuse to guess:
 - `zallet` needs `acceptBetaRisk = true`. It holds spending keys and upstream
   says not to trust it with real funds. It will not create a wallet for you.
 
-`zinder`'s four runtimes share a storage tree, so they run as one static user
-rather than `DynamicUser`. A test keeps that confined to `zinder`.
+`zinder`'s four runtimes share a storage tree, so its `user` defaults to a
+static `zinder-<instance>` and may not be null.
 
 ## Binary cache
 

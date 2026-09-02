@@ -52,16 +52,19 @@ nothing, or only binaries, declare nothing: the gate lists it as unsigned.
 Same rule: `modules/yourthing/default.nix`, discovered by `readDir`. A module is
 a function of `self` so its `package` option can default to this flake's build.
 
-Import the shared hardening rather than writing your own:
+Start from `modules/service.nix`: it defines the options every service has
+(`enable`, `package`, `extraArgs`, `user`) and `identity`, which turns `user`
+into the hardened `serviceConfig` -- DynamicUser, or a static user that it
+creates. A node or indexer is multi-instance (`services.zcash.<name>.<instance>`,
+unit `<name>-<instance>`, state `/var/lib/<name>-<instance>`); read
+`modules/zaino` for the smallest complete example. A wallet is single; read
+`modules/zpay`. Nodes go through `modules/node.nix`, lightwalletd-style
+servers through `modules/lightwallet.nix`.
 
-```nix
-serviceConfig = (import ../hardening.nix) // { ... };
-```
-
-If your service genuinely cannot use it — `zinder` cannot use `DynamicUser`,
-because its four runtimes share a storage tree — say so in a comment where
-someone will hit it, and add an assertion to `tests/units.nix` so the deviation
-stays confined to the service that needs it.
+A service that cannot use DynamicUser -- zinder's runtimes share one tree --
+defaults `user` to a static name and asserts it is not null, as zinder does.
+Add your service to `tests/units.nix`, which asserts hardening and identity
+for every unit.
 
 ## Before you open a PR
 

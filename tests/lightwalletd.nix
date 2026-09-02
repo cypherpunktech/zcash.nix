@@ -14,7 +14,7 @@ self: _: {
         self.nixosModules.lightwalletd
       ];
 
-      services.zcash.zebra = {
+      services.zcash.zebra.regtest = {
         enable = true;
         settings = {
           network = {
@@ -32,7 +32,7 @@ self: _: {
         };
       };
 
-      services.zcash.lightwalletd = {
+      services.zcash.lightwalletd.main = {
         enable = true;
         rpcPort = 18232;
         # A test machine with no certificate. Setting this deliberately is the
@@ -50,17 +50,17 @@ self: _: {
     };
 
   testScript = ''
-    machine.wait_for_unit("zebra.service")
+    machine.wait_for_unit("zebra-regtest.service")
     machine.wait_for_open_port(18232)
 
-    machine.wait_for_unit("lightwalletd.service")
-    machine.wait_until_succeeds("systemctl is-active --quiet lightwalletd.service", timeout=60)
+    machine.wait_for_unit("lightwalletd-main.service")
+    machine.wait_until_succeeds("systemctl is-active --quiet lightwalletd-main.service", timeout=60)
 
     # Same hardening assertions as zebra: shared code means a regression in
     # modules/hardening.nix would otherwise only be caught by whichever test
     # happened to check it.
     props = machine.succeed(
-        "systemctl show lightwalletd.service "
+        "systemctl show lightwalletd-main.service "
         "-p DynamicUser -p ProtectSystem -p NoNewPrivileges -p MemoryDenyWriteExecute"
     )
     assert "DynamicUser=yes" in props, props
@@ -68,10 +68,10 @@ self: _: {
     assert "NoNewPrivileges=yes" in props, props
     assert "MemoryDenyWriteExecute=yes" in props, props
 
-    machine.succeed("test -d /var/lib/lightwalletd")
+    machine.succeed("test -d /var/lib/lightwalletd-main")
 
     # Logs reach journald rather than a ./server.log the service cannot write
     # under ProtectSystem=strict. A silent unit is a broken one.
-    machine.succeed("journalctl -u lightwalletd.service --no-pager | head -c 1 | grep -q .")
+    machine.succeed("journalctl -u lightwalletd-main.service --no-pager | head -c 1 | grep -q .")
   '';
 }

@@ -14,7 +14,7 @@ self: _: {
     {
       imports = [ self.nixosModules.ztreamer ];
 
-      services.zcash.ztreamer = {
+      services.zcash.ztreamer.regtest = {
         enable = true;
         settings = {
           network = {
@@ -32,8 +32,8 @@ self: _: {
     };
 
   testScript = ''
-    machine.wait_for_unit("ztreamer.service")
-    machine.wait_until_succeeds("systemctl is-active --quiet ztreamer.service", timeout=60)
+    machine.wait_for_unit("ztreamer-regtest.service")
+    machine.wait_until_succeeds("systemctl is-active --quiet ztreamer-regtest.service", timeout=60)
 
     # The embedded node is a whole node: it answers JSON-RPC.
     machine.wait_for_open_port(18232)
@@ -48,7 +48,7 @@ self: _: {
     machine.wait_for_open_port(9999)
 
     props = machine.succeed(
-        "systemctl show ztreamer.service "
+        "systemctl show ztreamer-regtest.service "
         "-p DynamicUser -p ProtectSystem -p NoNewPrivileges -p CapabilityBoundingSet"
     )
     assert "DynamicUser=yes" in props, props
@@ -58,8 +58,8 @@ self: _: {
 
     # The index landed inside the private state directory (stat -L: see
     # tests/zebra.nix for the DynamicUser symlink).
-    machine.succeed("test -d /var/lib/ztreamer/index")
-    mode = machine.succeed("stat -Lc %a /var/lib/ztreamer").strip()
-    assert mode == "700", f"/var/lib/ztreamer is mode {mode}, expected 700"
+    machine.succeed("test -d /var/lib/ztreamer-regtest/index")
+    mode = machine.succeed("stat -Lc %a /var/lib/ztreamer-regtest").strip()
+    assert mode == "700", f"/var/lib/ztreamer-regtest is mode {mode}, expected 700"
   '';
 }

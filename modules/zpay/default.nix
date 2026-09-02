@@ -20,17 +20,15 @@ self:
 }:
 let
   cfg = config.services.zcash.zpay;
+  service = import ../service.nix {
+    inherit lib self pkgs;
+    name = "zpay";
+    description = "zpay, a Zcash-native payments facilitator";
+  };
 in
 {
-  options.services.zcash.zpay = {
-    enable = lib.mkEnableOption "zpay, a Zcash-native payments facilitator";
-
-    package = lib.mkOption {
-      type = lib.types.package;
-      default = self.packages.${pkgs.stdenv.hostPlatform.system}.zpay;
-      defaultText = lib.literalExpression "zcash-nix.packages.\${system}.zpay";
-      description = "The zpay package to run.";
-    };
+  # Single-instance: a payments facilitator is one per machine.
+  options.services.zcash.zpay = service.options // {
 
     environment = lib.mkOption {
       type = lib.types.attrsOf lib.types.str;
@@ -77,12 +75,9 @@ in
 
       inherit (cfg) environment;
 
-      serviceConfig = (import ../hardening.nix) // {
-        ExecStart = "${cfg.package}/bin/zpay-runtime";
+      serviceConfig = service.identity cfg "zpay" // {
+        ExecStart = lib.escapeShellArgs ([ "${cfg.package}/bin/zpay-runtime" ] ++ cfg.extraArgs);
         EnvironmentFile = lib.mkIf (cfg.environmentFile != null) cfg.environmentFile;
-        DynamicUser = true;
-        StateDirectory = "zpay";
-        StateDirectoryMode = "0700";
       };
     };
 
@@ -94,5 +89,7 @@ in
         lib.toInt (lib.last (lib.splitString ":" addr))
       )
     ];
+
+    users = service.users { inherit cfg; };
   };
 }
