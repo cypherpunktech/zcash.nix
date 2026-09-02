@@ -53,9 +53,10 @@ alternative is unpinned, unreproducible, hand-installed binaries.
   for every Rust package here. A package can still stamp in its own build
   environment — zaino read the build user — and that is fixed in the package.
   `.github/workflows/repro.yml` rebuilds a package N times and fails on any
-  difference; results per package are in the git log of the commit that
-  enabled this. Pinning guarantees the same *inputs*; a matching store path is
-  still not independent verification of a binary — run `repro.yml` yourself.
+  difference; each run's summary carries the verdict per package and platform,
+  and a failing run keeps both binaries as an artifact. Pinning guarantees the
+  same *inputs*; a matching store path is still not independent verification
+  of a binary — run `repro.yml` yourself.
 - **Build-time code execution.** Building a Rust workspace runs `build.rs` from
   every crate in the graph, and building Go runs its toolchain. This is normal
   and unavoidable, and it is why builds are sandboxed and CI tokens are not left
