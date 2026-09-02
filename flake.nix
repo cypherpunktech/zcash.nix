@@ -174,6 +174,57 @@
       availableFor =
         pkgs: lib.filterAttrs (_: lib.meta.availableOn pkgs.stdenv.hostPlatform) (packagesFor pkgs);
 
+      # OCI images: the distribution door for the operators who deploy
+      # containers rather than NixOS. One per redistributable package -- the
+      # licence rule decides, so ztreamer is absent by the same attribute that
+      # keeps it out of the cache -- and only for Linux, since that is what a
+      # container is. Nothing in the image that the package did not need:
+      # its closure, CA certificates for TLS, /data for state, /tmp. Runs as
+      # uid 1000 with HOME=/data, so every daemon's home-directory default
+      # (zebra's ~/.cache, zaino's ~/.local) lands in the one volume without
+      # per-image knowledge of where each puts things. The entrypoint is the
+      # package's mainProgram; every binary the package ships is on PATH for
+      # an operator who overrides it. Tag is the version and nothing else: a
+      # node operator pins, and a `latest` on a consensus node is a footgun.
+      imagesFor =
+        pkgs:
+        lib.mapAttrs (
+          name: pkg:
+          pkgs.dockerTools.buildLayeredImage {
+            name = "ghcr.io/cypherpunktech/${name}";
+            tag = pkg.version;
+            contents = [
+              pkg
+              pkgs.cacert
+            ];
+            fakeRootCommands = ''
+              mkdir -p ./data ./tmp
+              chown 1000:1000 ./data
+              chmod 1777 ./tmp
+            '';
+            config = {
+              Entrypoint = [ (lib.getExe pkg) ];
+              User = "1000:1000";
+              WorkingDir = "/data";
+              Env = [
+                "HOME=/data"
+                "SSL_CERT_FILE=/etc/ssl/certs/ca-bundle.crt"
+              ];
+              Volumes."/data" = { };
+              Labels = {
+                "org.opencontainers.image.title" = name;
+                "org.opencontainers.image.version" = pkg.version;
+                "org.opencontainers.image.description" = pkg.meta.description;
+                "org.opencontainers.image.source" = "https://github.com/cypherpunktech/zcash.nix";
+                "org.opencontainers.image.url" = pkg.meta.homepage;
+                "org.opencontainers.image.licenses" = lib.concatMapStringsSep "," (l: l.spdxId or l.shortName) (
+                  lib.toList pkg.meta.license
+                );
+              };
+            };
+          }
+        ) (lib.filterAttrs (_: pkg: pkg.redistributable) (availableFor pkgs));
+
       # Running the binary is the only gate that catches wrapper and link
       # breakage; eval and even a green `nix build` both miss it (the lesson
       # from ~/nix/checks/default.nix). Each package states its own proof via
@@ -235,6 +286,12 @@
       };
 
       packages = eachSystem availableFor;
+
+      # `nix build .#images.x86_64-linux.zebra` gives a docker-archive to
+      # `docker load`; CI pushes them to ghcr.io/cypherpunktech/<name> per
+      # architecture and stitches the manifest (check.yml). Linux only: an
+      # image is a Linux root filesystem, and a darwin host cannot build one.
+      images = eachSystem (pkgs: lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (imagesFor pkgs));
 
       # A NixOS VM test boots a machine and asserts the service runs, which is
       # the only check that covers the unit rather than the binary. They exist

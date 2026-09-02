@@ -157,3 +157,84 @@ jobs:
         run: test -e /dev/kvm || { echo "::error::no /dev/kvm on this runner; NixOS VM tests need it"; exit 1; }
 
       - run: nix build -L '.#checks.x86_64-linux.vm-${{ matrix.test }}'
+
+  # OCI images, one per redistributable package (flake.nix `images`), built
+  # on each Linux target from the packages the matrix above just cached, and
+  # pushed to ghcr.io/cypherpunktech/<name>:<version>-<arch> -- only from a
+  # push to main, so a PR proves the image builds and publishes nothing.
+  # Tools come from the flake's pinned nixpkgs, not the runner image.
+  image:
+    needs: [discover, build]
+    name: image ${{ matrix.image }} · ${{ matrix.target.system }}
+    runs-on: ${{ matrix.target.runner }}
+    # packages: write is the GHCR push; contents: read is the checkout.
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.discover.outputs.images) }}
+        target: ${{ fromJSON(needs.discover.outputs.targets) }}
+        exclude:
+          - target: { runner: macos-14, system: aarch64-darwin }
+    env:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      - name: Cachix
+        if: env.CACHIX_AUTH_TOKEN != ''
+        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        with:
+          name: cypherpunktech
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: true
+
+      - name: Build
+        id: build
+        run: |
+          nix build -L '.#images.${{ matrix.target.system }}.${{ matrix.image }}'
+          echo "tag=$(nix eval --raw '.#images.${{ matrix.target.system }}.${{ matrix.image }}.imageTag')" >> "$GITHUB_OUTPUT"
+
+      - name: Push
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          TAG: ${{ steps.build.outputs.tag }}
+          ARCH: ${{ matrix.target.system == 'aarch64-linux' && 'arm64' || 'amd64' }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          nix shell --inputs-from . nixpkgs#skopeo -c skopeo login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<<"$GHCR_TOKEN"
+          nix shell --inputs-from . nixpkgs#skopeo -c skopeo copy docker-archive:result "docker://ghcr.io/cypherpunktech/${{ matrix.image }}:$TAG-$ARCH"
+
+  # The multi-arch tag: <version> pointing at whichever of the per-arch
+  # images were pushed above. manifest-tool builds the list from remote
+  # references, so nothing is pulled.
+  manifest:
+    needs: [discover, image]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        image: ${{ fromJSON(needs.discover.outputs.images) }}
+    env:
+      TARGETS: ${{ needs.discover.outputs.targets }}
+      GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      - run: |
+          tag=$(nix eval --raw '.#images.x86_64-linux.${{ matrix.image }}.imageTag')
+          platforms=$(jq -r '[.[] | select(.system | endswith("-linux")) | if .system == "aarch64-linux" then "linux/arm64" else "linux/amd64" end] | join(",")' <<<"$TARGETS")
+          nix shell --inputs-from . nixpkgs#manifest-tool -c \
+            manifest-tool --username "$GITHUB_ACTOR" --password "$GHCR_TOKEN" push from-args \
+              --platforms "$platforms" \
+              --template "ghcr.io/cypherpunktech/${{ matrix.image }}:$tag-ARCH" \
+              --target "ghcr.io/cypherpunktech/${{ matrix.image }}:$tag"

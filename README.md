@@ -51,6 +51,14 @@ checkout, with the rocksdb/bindgen/protoc environment that makes it build:
 $ nix develop github:cypherpunktech/zcash.nix#zcash
 ```
 
+Containers, for the operators who deploy those instead: one image per
+package, non-root, state in `/data`, tagged by version only.
+
+```console
+$ docker run -v zakura:/data ghcr.io/cypherpunktech/zakura:1.3.0 start
+$ nix build .#images.x86_64-linux.zakura && docker load < result   # or build it
+```
+
 > The repository is currently private, so these need a credential —
 > `git+ssh://git@github.com/cypherpunktech/zcash.nix`.
 

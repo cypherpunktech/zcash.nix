@@ -24,6 +24,9 @@ on:
       unredistributable:
         description: Regex of store paths that must not reach the public cache
         value: ${{ jobs.discover.outputs.unredistributable }}
+      images:
+        description: JSON array of OCI image names (Linux only)
+        value: ${{ jobs.discover.outputs.images }}
 
 jobs:
   discover:
@@ -33,6 +36,7 @@ jobs:
       vmtests: ${{ steps.vmtests.outputs.list }}
       targets: ${{ steps.targets.outputs.list }}
       unredistributable: ${{ steps.unredistributable.outputs.regex }}
+      images: ${{ steps.images.outputs.list }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -60,6 +64,12 @@ jobs:
               (builtins.filter (n: !ps.${n}.redistributable) (builtins.attrNames ps)))')
           echo "regex=$regex" >> "$GITHUB_OUTPUT"
           echo "not pushed: ${regex:-nothing}"
+
+      - id: images
+        run: |
+          list=$(nix eval --json '.#images.x86_64-linux' --apply builtins.attrNames)
+          echo "list=$list" >> "$GITHUB_OUTPUT"
+          echo "images: $list"
 
       - id: vmtests
         run: |
