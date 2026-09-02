@@ -1,11 +1,11 @@
 # One machine with every service module enabled, asserting the properties that
 # must hold for all of them.
 #
-# Why this exists alongside the per-service tests: zebra, ztreamer and the two
-# lightwalletds can be driven to a healthy state in a VM, but zaino, zinder and
-# zallet cannot without a synced chain or an initialised wallet. Writing
-# "wait_for_unit" tests for those would produce tests that fail for reasons
-# unrelated to the module.
+# Why this exists alongside the per-service tests: zebra, ztreamer, the two
+# lightwalletds and (in tests/stack.nix, against a self-mining Regtest chain)
+# zaino can be driven to a healthy state in a VM, but zinder and zallet cannot
+# without an initialised wallet or a real chain. Writing "wait_for_unit" tests
+# for those would produce tests that fail for reasons unrelated to the module.
 #
 # What CAN be asserted for all of them, and is exactly where module bugs live:
 # that the units are well-formed, that nothing runs as root, and that the
