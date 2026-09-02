@@ -131,16 +131,16 @@ in
           // lib.optionalAttrs (addressFamilies != [ ]) {
             RestrictAddressFamilies = hardening.RestrictAddressFamilies ++ addressFamilies;
           }
-          # Zebra's internal miner sets its worker threads' scheduling priority
-          # (sched_setattr, and sched_setscheduler via pthread_setschedparam),
-          # which the shared filter's ~@resources forbids: the node died with
-          # SIGSYS on its first block. Allowed only where mining is on; a
-          # production node keeps the full filter. Found by tests/stack.nix.
+          # Zebra's internal miner lowers its solver thread's priority (the
+          # thread-priority crate: pthread_setschedparam, then setpriority for
+          # the nice value), and the shared filter's ~@resources forbids both:
+          # the node took SIGSYS on its first block. Read off the kernel's audit
+          # line (syscall=141, setpriority) rather than guessed. Allowed only
+          # where mining is on; a production node keeps the full filter.
           // lib.optionalAttrs (cfg.settings.mining.internal_miner or false) {
             SystemCallFilter = hardening.SystemCallFilter ++ [
-              "sched_setattr"
               "sched_setscheduler"
-              "sched_setparam"
+              "setpriority"
             ];
           }
           // {
