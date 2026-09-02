@@ -117,8 +117,14 @@ jobs:
   # x86_64-linux only: nixosTest needs a Linux builder with KVM, which no macOS
   # or darwin path provides. These therefore cannot be run on a maintainer's
   # Mac at all, and CI is the only place they ever execute.
+  #
+  # After `build`, not beside it. A VM test instantiates the modules, and the
+  # units test instantiates all of them, so it needs every package: from the
+  # cache the build jobs just filled, or -- when a flake-wide change makes all
+  # seven a miss -- built here on one 14 GB runner, which ran out of disk
+  # mid-zakura. The dependency costs latency, never minutes.
   vm:
-    needs: discover
+    needs: [discover, build]
     name: vm-${{ matrix.test }}
     runs-on: ubuntu-latest
     strategy:
