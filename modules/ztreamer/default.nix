@@ -91,6 +91,8 @@ let
       config.settings = {
         state.cache_dir = lib.mkDefault stateDir;
         rpc.cookie_dir = lib.mkDefault stateDir;
+        # The embedded node's iroh identity key; its default is ~/.zakura.
+        network.identity_dir = lib.mkDefault "${stateDir}/identity";
       };
     };
 in
@@ -111,6 +113,8 @@ in
         after = [ "network-online.target" ];
         wants = [ "network-online.target" ];
         serviceConfig = service.identity cfg "ztreamer-${instanceName}" // {
+          # iroh's network monitor needs netlink; see modules/zakura.
+          RestrictAddressFamilies = (import ../hardening.nix).RestrictAddressFamilies ++ [ "AF_NETLINK" ];
           ExecStart = lib.escapeShellArgs (
             [
               (lib.getExe cfg.package)

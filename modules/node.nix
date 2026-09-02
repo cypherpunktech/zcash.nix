@@ -19,6 +19,13 @@
   description,
   documentation,
   defaultPeerPort,
+  # Default settings a fork has and the original does not, as a function of
+  # the instance's state directory (zakura's network identity file). Zebra
+  # rejects unknown fields, so these cannot simply be set for both.
+  defaults ? (_: { }),
+  # Address families beyond IPv4/IPv6 the daemon needs (zakura: iroh watches
+  # interfaces over netlink, and dies at startup without it).
+  addressFamilies ? [ ],
 }:
 {
   config,
@@ -39,6 +46,7 @@ let
   instances = service.enabled config.services.zcash.${name};
   toml = pkgs.formats.toml { };
   nodeName = name;
+  hardening = import ./hardening.nix;
 
   # A submodule under attrsOf receives its key as `name` -- only when it asks
   # for it by that exact name, which is why this shadows the node's own.
@@ -89,7 +97,8 @@ let
       config.settings = {
         state.cache_dir = lib.mkDefault stateDir;
         rpc.cookie_dir = lib.mkDefault stateDir;
-      };
+      }
+      // lib.mapAttrsRecursive (_: lib.mkDefault) (defaults stateDir);
     };
 in
 {
@@ -117,17 +126,34 @@ in
         wantedBy = [ "multi-user.target" ];
         after = [ "network-online.target" ];
         wants = [ "network-online.target" ];
-        serviceConfig = service.identity cfg "${name}-${instanceName}" // {
-          ExecStart = lib.escapeShellArgs (
-            [
-              (lib.getExe cfg.package)
-              "--config"
-              (toml.generate "${name}-${instanceName}.toml" cfg.settings)
-              "start"
-            ]
-            ++ cfg.extraArgs
-          );
-        };
+        serviceConfig =
+          service.identity cfg "${name}-${instanceName}"
+          // lib.optionalAttrs (addressFamilies != [ ]) {
+            RestrictAddressFamilies = hardening.RestrictAddressFamilies ++ addressFamilies;
+          }
+          # Zebra's internal miner sets its worker threads' scheduling priority
+          # (sched_setattr, and sched_setscheduler via pthread_setschedparam),
+          # which the shared filter's ~@resources forbids: the node died with
+          # SIGSYS on its first block. Allowed only where mining is on; a
+          # production node keeps the full filter. Found by tests/stack.nix.
+          // lib.optionalAttrs (cfg.settings.mining.internal_miner or false) {
+            SystemCallFilter = hardening.SystemCallFilter ++ [
+              "sched_setattr"
+              "sched_setscheduler"
+              "sched_setparam"
+            ];
+          }
+          // {
+            ExecStart = lib.escapeShellArgs (
+              [
+                (lib.getExe cfg.package)
+                "--config"
+                (toml.generate "${name}-${instanceName}.toml" cfg.settings)
+                "start"
+              ]
+              ++ cfg.extraArgs
+            );
+          };
       }
     ) instances;
 
