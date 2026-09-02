@@ -1,156 +1,124 @@
-# zcash.nix
+![zcash.nix](./banner.png)
 
-Nix packages and NixOS modules for the Zcash ecosystem, built from pinned source.
+# zcash.nix [![GitHub Actions][gha-badge]][gha] [![X][x-badge]][x]
 
-nixpkgs ships one Zcash node: `zcash` 5.4.2, which is zcashd, which is sunset.
-Zakura, Zebra, the indexers and Zallet have no nixpkgs attribute at all.
+[gha]: https://github.com/cypherpunktech/zcash.nix/actions
+[gha-badge]: https://github.com/cypherpunktech/zcash.nix/actions/workflows/check.yml/badge.svg
+[x]: https://x.com/cypherpunk
+[x-badge]: https://img.shields.io/twitter/follow/cypherpunk
+
+Nix packages and NixOS modules for the [Zcash](https://z.cash) ecosystem, built from pinned source.
+
+Running Zcash infrastructure means installing a node, an indexer, and a wallet server from different
+teams, each with its own build, and keeping them all current on every machine. nixpkgs offers no help
+here: its one Zcash node is zcashd, which is sunset. This repository packages the whole post-zcashd
+stack, runs each program as a hardened service, and proves every claim it makes in CI, on every
+platform, before anything ships.
 
 ## Packages
 
-| | | binaries |
-|---|---|---|
+| Package | | Binaries |
+| --- | --- | --- |
 | **zakura** | Zcash full node built for scale | `zakurad`, `zakura-prune-state`, `zakura-rollback-state` |
-| **zebra** | Zcash Foundation's Zcash node | `zebrad` |
-| **zinder** | ZF's service-oriented indexer | `zinder-ingest`, `-projector`, `-query`, `-compat-lightwalletd` |
+| **zebra** | Zcash Foundation's node | `zebrad` |
 | **zaino** | Zingo Labs' indexer and proxy | `zainod` |
-| **zallet** | RPC wallet replacing zcashd's | `zallet` + its `zallet-zebra` backend |
+| **zinder** | ZF's service-oriented indexer | `zinder-ingest`, `-projector`, `-query`, `-compat-lightwalletd` |
 | **ztreamer** | Light-wallet server with an embedded zakura node | `ztreamerd` |
 | **lightwalletd** | Light-client backend | `lightwalletd` |
 | **lightwalletd-rs** | Light-client backend, in Rust | `lightwalletd-rs` |
+| **zallet** | RPC wallet replacing zcashd's | `zallet` and its zebra backend |
 | **zpay** | Payments facilitator (x402, MPP) | `zpay-runtime`, `zspend-runtime` |
 
-`lightwalletd` is the one package nixpkgs also has; kept because nixpkgs sits
-five releases behind.
+Every package is built and its binary run on `x86_64-linux`, `aarch64-linux`, and `aarch64-darwin`. A
+platform is listed only once that has happened there. `ztreamer` has no licence upstream yet, so it is
+labelled `unfree`: it builds on your machine and is never served from the cache or the registry.
 
-`ztreamer` has **no licence upstream** yet, so it is labelled `unfree`: it
-builds from here on your machine, is never served from the cache, and needs
-`allowUnfreePredicate` when used through the overlay. A licence upstream
-changes one line.
+## Usage
 
-## Use
+Run a package directly, or add the flake to your configuration:
 
 ```console
 $ nix run github:cypherpunktech/zcash.nix#zakura -- --version
 ```
 
 ```nix
-# flake input
 inputs.zcash-nix.url = "github:cypherpunktech/zcash.nix";
 
-# or as an overlay
+# as an overlay
 nixpkgs.overlays = [ zcash-nix.overlays.default ];
-
-# packaging your own Zcash tool: Rust that is bit-reproducible on darwin
-rustPlatform = zcash-nix.lib.reproducibleRustPlatform pkgs;
 ```
 
-Hacking on the Zcash software itself — `cargo build` in a zebra or zaino
-checkout, with the rocksdb/bindgen/protoc environment that makes it build:
+Prebuilt binaries for all three platforms are served from `cypherpunktech.cachix.org`. Nix ignores a
+flake's own cache settings for untrusted users, so pass `--accept-flake-config` or add the cache
+yourself:
 
-```console
-$ nix develop github:cypherpunktech/zcash.nix#zcash
+```nix
+nix.settings = {
+  extra-substituters = [ "https://cypherpunktech.cachix.org" ];
+  extra-trusted-public-keys = [ "cypherpunktech.cachix.org-1:WKo2WboMVH8HUtCKNsSFx31YQibaJ2eocruFvAzWgA4=" ];
+};
 ```
 
-Containers, for the operators who deploy those instead: one image per
-package, non-root, state in `/data`, tagged by version only.
+Containers are published to GHCR, one per package: non-root, state in `/data`, tagged by version only.
 
 ```console
 $ docker run -v zakura:/data ghcr.io/cypherpunktech/zakura:1.3.0 start
-$ nix build .#images.x86_64-linux.zakura && docker load < result   # or build it
 ```
 
-## NixOS modules
+To work on the Zcash software itself, `nix develop github:cypherpunktech/zcash.nix#zcash` gives a shell
+with the exact toolchain and native inputs the packages are built with, so `cargo build` works in a
+zebra or zaino checkout. To package a Zcash tool of your own, `lib.reproducibleRustPlatform` is the
+Rust platform that makes builds bit-reproducible on macOS.
+
+## NixOS Modules
 
 ```nix
 imports = [ zcash-nix.nixosModules.default ];
 
 services.zcash.zakura.mainnet = {
   enable = true;
-  settings.rpc.listen_addr = "127.0.0.1:8232";   # freeform zakura.toml
+  settings.rpc.listen_addr = "127.0.0.1:8232"; # freeform zakura.toml
 };
+
 services.zcash.zakura.testnet = {
   enable = true;
   settings.network.network = "Testnet";
 };
 ```
 
-One module per package. Nodes and indexers are multi-instance: each entry
-is its own unit (`zakura-mainnet.service`) with its own state directory
-(`/var/lib/zakura-mainnet`), so mainnet and testnet coexist on one host.
-Wallets (`zallet`, `zpay`) are single. Every service runs under `DynamicUser`
-with an empty `CapabilityBoundingSet`, `ProtectSystem=strict`, a 0700
-`StateDirectory`, a syscall filter and `MemoryDenyWriteExecute` — see
-[`modules/hardening.nix`](modules/hardening.nix). Every service also takes
-`extraArgs`, and `user`: a static user instead of `DynamicUser`, which is
-the one way two services can share a state directory (zallet reading its
-node's database: give both the same `user`).
+One module per package. Nodes and indexers are multi-instance, so mainnet and testnet coexist on one
+host, each as its own unit with its own state directory. Wallets are single-instance.
 
-Three things the modules refuse to guess:
+Every service runs as a dynamic user with no capabilities, a read-only system, a private state
+directory, and a syscall filter. Every service takes `extraArgs`, and `user` for the one case where two
+services must share a state directory, such as zallet reading its node's database.
 
-- `openFirewall` opens peer-to-peer, never RPC.
-- `lightwalletd` and `lightwalletd-rs` need TLS, or an explicit
-  `insecureNoTLS = true`; the Go one also needs a credential source.
-- `ztreamer` has two listeners for two publics: `openFirewall` is the wallet
-  gRPC port, `openPeerPort` the embedded node's.
-- `zallet` needs `acceptBetaRisk = true`. It holds spending keys and upstream
-  says not to trust it with real funds. It will not create a wallet for you.
+The modules refuse to guess on security. `openFirewall` opens the peer-to-peer port and never RPC.
+The lightwalletd modules require TLS or an explicit `insecureNoTLS = true`. `zallet` requires
+`acceptBetaRisk = true`, because it holds spending keys and upstream says not to trust it with real
+funds yet.
 
-`zinder`'s four runtimes share a storage tree, so its `user` defaults to a
-static `zinder-<instance>` and may not be null.
+## Verification
 
-## Binary cache
+This repository does not ask to be trusted. Each claim below is a job that goes red when the claim
+stops being true.
 
-`https://cypherpunktech.cachix.org`, public, no credential needed to pull.
-Nix ignores a flake's own `nixConfig` for untrusted users, so either pass
-`--accept-flake-config` or set it yourself:
+- Every binary is built and executed on every platform it claims.
+- Every module is booted in a virtual machine, including a full stack that mines blocks, indexes
+  them, and answers a wallet's query.
+- Builds are rebuilt and compared byte for byte.
+- Dependencies are scanned daily for published vulnerabilities.
+- Where upstream signs its releases, the signature is verified against the exact source that was built.
+- Version bumps are proposed weekly, tested on every platform, and merged once green. A daily check
+  fails if any package falls behind upstream.
 
-```nix
-nix.settings = {
-  extra-substituters = [ "https://cypherpunktech.cachix.org" ];
-  extra-trusted-public-keys = [
-    "cypherpunktech.cachix.org-1:WKo2WboMVH8HUtCKNsSFx31YQibaJ2eocruFvAzWgA4="
-  ];
-};
-```
+See [SECURITY.md](SECURITY.md) for what is and is not guaranteed.
 
-All three systems are built by CI and pushed to the cache; a maintainer can
-also push a darwin build ahead of CI (`just push-cache <pkg>`).
+## Contributing
 
-## Platforms
+Contributions are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for adding a package or module, and
+[`AGENTS.md`](AGENTS.md) for the conventions and the reasons behind them.
 
-`aarch64-darwin`, `aarch64-linux`, `x86_64-linux`. A package lists a platform
-only once its binary has *run* there — `meta.platforms` is the only copy of
-that claim, so there is no table here to drift from it.
+## License
 
-## Not packaged
-
-Four repos in this ecosystem are Rust libraries with zero binary targets. Nix
-owns environments; cargo owns dependency graphs.
-
-| | |
-|---|---|
-| [librustzcash](https://github.com/zcash/librustzcash) | `cargo add zcash_client_backend` |
-| [zakura-core/common](https://github.com/zakura-core/common) | `cargo add zakura-primitives` |
-| [zakura-core/wallet-libraries](https://github.com/zakura-core/wallet-libraries) | `cargo add zakura-client-backend` |
-| [zally](https://github.com/gustavovalverde/zally) | not published; git dependency |
-
-Also unbuilt as developer tooling rather than deployables: `zebra-utils`,
-`zakura-utils`, `zinder-bench`, `zinder-explorer`, `zinder-compat-cipherscan`,
-`zpay-demo`.
-
-## Updates
-
-`update.yml` runs `nix-update` weekly, one PR per package, no auto-merge.
-`stale.yml` runs daily and fails if a pin falls behind — an updater that
-silently stops looks identical to one with nothing to do.
-`trust.yml` runs daily: cargo-audit and govulncheck over what each build
-vendors, and signature verification of the pinned tag where upstream signs
-one (today: zinder). Red means a vulnerable dependency shipped upstream.
-
-## More
-
-[SECURITY.md](SECURITY.md) — what is and is not guaranteed.
-[CONTRIBUTING.md](CONTRIBUTING.md) — adding a package or module.
-[AGENTS.md](AGENTS.md) — conventions and the traps behind them.
-
-MIT for the packaging code. Each packaged project keeps its own license.
+This project is licensed under [MIT](LICENSE). Each packaged project keeps its own license.
