@@ -48,7 +48,29 @@
         "x86_64-linux"
       ];
 
-      eachSystem = f: lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+      packageNames = lib.attrNames (
+        lib.filterAttrs (_: type: type == "directory") (builtins.readDir ./packages)
+      );
+
+      # Not legacyPackages: this instance permits building this flake's own
+      # packages whatever their meta.license says. ztreamer's upstream has no
+      # licence, so its derivation is honestly labelled `unfree`, and nixpkgs
+      # refuses to evaluate an unfree derivation without consent. Here the
+      # consent is the act of asking this flake for it: `nix run .#ztreamer`
+      # builds public source on your own machine. The overlay is untouched, so
+      # a consumer's nixpkgs still asks for allowUnfreePredicate as it should,
+      # and the cache push filter still reads the label (discover.yml).
+      eachSystem =
+        f:
+        lib.genAttrs systems (
+          system:
+          f (
+            import nixpkgs {
+              inherit system;
+              config.allowUnfreePredicate = p: builtins.elem (lib.getName p) packageNames;
+            }
+          )
+        );
 
       # Rust binaries from nixpkgs' buildRustPackage are not bit-reproducible on
       # darwin: Hydra's own fd and ripgrep fail `nix build --rebuild` there. nix
@@ -110,27 +132,37 @@
             );
         };
 
+      # Whether the licence lets binaries be served to others -- nixpkgs records
+      # that per licence, a package may carry several, and a package that states
+      # none gets no benefit of the doubt. This is what decides what reaches the
+      # public cache (discover.yml, justfile), so it lives on the package.
+      redistributable =
+        pkg: pkg.meta ? license && lib.all (l: l.redistributable or false) (lib.toList pkg.meta.license);
+
       # A package IS a directory under packages/. Adding one is adding a
       # directory — there is no list in this file to forget to edit. The
       # overlay and the packages output are this one function applied to
       # different package sets, so they cannot drift apart.
       packagesFor =
         pkgs:
-        lib.genAttrs
-          (lib.attrNames (lib.filterAttrs (_: type: type == "directory") (builtins.readDir ./packages)))
-          (
-            name:
-            let
-              package = import (./packages + "/${name}");
-            in
-            # callPackage passes explicit arguments unconditionally, and a Go
-            # package that never asked for rustPlatform would reject it.
-            pkgs.callPackage package (
-              lib.optionalAttrs (lib.functionArgs package ? rustPlatform) {
-                rustPlatform = reproducibleRustPlatform pkgs;
-              }
-            )
-          );
+        lib.genAttrs packageNames (
+          name:
+          let
+            package = import (./packages + "/${name}");
+          in
+          # callPackage passes explicit arguments unconditionally, and a Go
+          # package that never asked for rustPlatform would reject it.
+          (pkgs.callPackage package (
+            lib.optionalAttrs (lib.functionArgs package ? rustPlatform) {
+              rustPlatform = reproducibleRustPlatform pkgs;
+            }
+          )).overrideAttrs
+            (o: {
+              passthru = (o.passthru or { }) // {
+                redistributable = redistributable o;
+              };
+            })
+        );
 
       # `nix flake check --all-systems` forces every package's drvPath, and
       # asking for the drvPath of a package whose own meta says it is

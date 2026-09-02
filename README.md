@@ -14,11 +14,18 @@ Zakura, Zebra, the indexers and Zallet have no nixpkgs attribute at all.
 | **zinder** | ZF's service-oriented indexer | `zinder-ingest`, `-projector`, `-query`, `-compat-lightwalletd` |
 | **zaino** | Zingo Labs' indexer and proxy | `zainod` |
 | **zallet** | RPC wallet replacing zcashd's | `zallet` + its `zallet-zebra` backend |
+| **ztreamer** | Light-wallet server with an embedded zakura node | `ztreamerd` |
 | **lightwalletd** | Light-client backend | `lightwalletd` |
+| **lightwalletd-rs** | Light-client backend, in Rust | `lightwalletd-rs` |
 | **zpay** | Payments facilitator (x402, MPP) | `zpay-runtime`, `zspend-runtime` |
 
 `lightwalletd` is the one package nixpkgs also has; kept because nixpkgs sits
 five releases behind.
+
+`ztreamer` has **no licence upstream** yet, so it is labelled `unfree`: it
+builds from here on your machine, is never served from the cache, and needs
+`allowUnfreePredicate` when used through the overlay. A licence upstream
+changes one line.
 
 ## Use
 
@@ -56,8 +63,10 @@ syscall filter and `MemoryDenyWriteExecute` — see
 Three things the modules refuse to guess:
 
 - `openFirewall` opens peer-to-peer, never RPC.
-- `lightwalletd` needs TLS, or an explicit `insecureNoTLS = true`, plus a
-  credential source.
+- `lightwalletd` and `lightwalletd-rs` need TLS, or an explicit
+  `insecureNoTLS = true`; the Go one also needs a credential source.
+- `ztreamer` has two listeners for two publics: `openFirewall` is the wallet
+  gRPC port, `openPeerPort` the embedded node's.
 - `zallet` needs `acceptBetaRisk = true`. It holds spending keys and upstream
   says not to trust it with real funds. It will not create a wallet for you.
 

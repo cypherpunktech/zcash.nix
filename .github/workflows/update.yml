@@ -49,6 +49,7 @@ jobs:
         with:
           name: cypherpunktech
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          pushFilter: ${{ needs.discover.outputs.unredistributable }}
 
       # nix-update rewrites version, src hash and cargoHash in place, finding
       # the file through meta.position. It builds to discover the new hashes,

@@ -18,6 +18,13 @@ the real hash out of the error. Never guess one and never truncate one.
 Every derivation must set `meta.description`, `meta.license`, `meta.homepage`,
 `meta.mainProgram`, `meta.platforms`, and:
 
+`meta.license` is what upstream grants, not what we would like: a repository
+with no LICENSE file is `lib.licenses.unfree`, since under copyright every
+right not granted is reserved. That label is load-bearing -- it is what keeps
+the package out of the public cache (`passthru.redistributable`, derived from
+it in flake.nix) -- so the fix for an unfree package is a licence upstream,
+never a friendlier label here.
+
 ```nix
 passthru.smokeArgs = [ "--version" ];
 ```

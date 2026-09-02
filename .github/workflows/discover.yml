@@ -21,6 +21,9 @@ on:
       targets:
         description: JSON array of { runner, system } to build on
         value: ${{ jobs.discover.outputs.targets }}
+      unredistributable:
+        description: Regex of store paths that must not reach the public cache
+        value: ${{ jobs.discover.outputs.unredistributable }}
 
 jobs:
   discover:
@@ -29,6 +32,7 @@ jobs:
       packages: ${{ steps.packages.outputs.list }}
       vmtests: ${{ steps.vmtests.outputs.list }}
       targets: ${{ steps.targets.outputs.list }}
+      unredistributable: ${{ steps.unredistributable.outputs.regex }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -40,6 +44,22 @@ jobs:
           list=$(nix eval --json '.#packages.x86_64-linux' --apply builtins.attrNames)
           echo "list=$list" >> "$GITHUB_OUTPUT"
           echo "packages: $list"
+
+      # What the licence forbids serving to others. A package says so through
+      # passthru.redistributable (flake.nix, from meta.license); this turns the
+      # answer into the pushFilter every Cachix step applies, so an unfree
+      # package is built and tested like any other and never leaves the runner.
+      # Store paths carry the pname, so `-ztreamer-` catches the package and
+      # its vendored sources alike. (The ${n} below is Nix, hence the
+      # shellcheck directive.)
+      - id: unredistributable
+        run: |
+          # shellcheck disable=SC2016
+          regex=$(nix eval --raw '.#packages.x86_64-linux' --apply 'ps:
+            builtins.concatStringsSep "|" (map (n: "-" + n + "-")
+              (builtins.filter (n: !ps.${n}.redistributable) (builtins.attrNames ps)))')
+          echo "regex=$regex" >> "$GITHUB_OUTPUT"
+          echo "not pushed: ${regex:-nothing}"
 
       - id: vmtests
         run: |
