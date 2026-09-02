@@ -1,20 +1,15 @@
+# Version bumps, one PR per package, merged by this workflow once green.
+#
+# The design constraint is negative: this workflow must never be able to fail
+# quietly. helium-flake's updater closed and deleted its own branch on every
 # error, so three months of total failure looked exactly like three months of
 # "nothing to update". So: no branch deletion on failure, no `|| true`. A
 # broken bump leaves a red job and a branch you can look at, and stale.yml
 # independently asserts that bumps are actually happening.
 #
-# Bumps DO merge themselves -- once the full check.yml run on the branch is
-# green, through GitHub's auto-merge and a ruleset on main that requires it.
-# The gate that stands in for a reader is: builds on every claimed platform,
-# the binary runs, the VM tests pass, the tag verifies where upstream signs.
-# A red run leaves the PR open with the failure on it.# Version bumps, one PR per package.
-#
-# The design constraint is negative: this workflow must never be able to fail
-# quietly. helium-flake's updater closed and deleted its own branch on every
-# error, so three months of total failure looked exactly like three months of
-# "nothing to update". So: no auto-merge, no branch deletion on failure, no
-# `|| true`. A broken bump leaves a red job and a branch you can look at, and
-# stale.yml independently asserts that bumps are actually happening.
+# The gate that stands in for a reader: builds on every claimed platform, the
+# binary runs, the VM tests pass, the tag verifies where upstream signs. A red
+# run leaves the PR open with the failure on it.
 name: update
 
 on:
@@ -152,19 +147,24 @@ jobs:
             matrix, VM tests included, runs on this branch via `check.yml`,
             and the PR merges itself when that is green.
 
-      # A PR opened with GITHUB_TOKEN triggers no workflows, by GitHub's rule
-      # against runaway automation -- so without this step the PR would carry
-      # no checks at all. workflow_dispatch is the one event that rule allows,
-      # and a run dispatched on the branch reports its checks on the branch's
-      # head, which is the PR's head. Then auto-merge: GitHub merges when the
-      # ruleset on main is satisfied, which requires check.yml's `ci` job. If
-      # that job is red the PR stays open with the reason on it, which is what
-      # a red bump should do.
-      - name: Test the branch, then merge when green
+      # Nothing GITHUB_TOKEN does triggers a workflow, by GitHub's rule against
+      # runaway automation: not the PR it opens, and not the merge it performs.
+      # workflow_dispatch is the one event that rule allows, so this step does
+      # by hand what events would have done. It dispatches check.yml on the
+      # branch (its `ci` check lands on the PR's head, which the ruleset on
+      # main requires), waits for it, merges, then dispatches check.yml on main
+      # so the merged tip gets the run that publishes images and fills the
+      # cache. A red branch run stops here, PR left open with the reason on it.
+      - name: Test the branch, merge when green, test main
         if: steps.pr.outputs.pull-request-number != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ steps.pr.outputs.pull-request-number }}
+          BRANCH: update/${{ matrix.package }}
         run: |
-          gh workflow run check.yml --ref 'update/${{ matrix.package }}'
-          gh pr merge --auto --squash "$PR"
+          gh workflow run check.yml --ref "$BRANCH"
+          sleep 30
+          run=$(gh run list --workflow check.yml --branch "$BRANCH" --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId')
+          gh run watch "$run" --exit-status --interval 60
+          gh pr merge --squash "$PR"
+          gh workflow run check.yml --ref main
