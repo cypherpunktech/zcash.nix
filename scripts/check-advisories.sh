@@ -57,7 +57,7 @@ done
 
 if [ ${#failed[@]} -gt 0 ]; then
 	echo
-	echo "${#failed[@]} package(s) with known-vulnerable dependencies:" >&2
+	echo "known-vulnerable dependencies in $(printf '%s\n' "${failed[@]%% *}" | sort -u | wc -l | tr -d ' ') package(s):" >&2
 	printf '  %s\n' "${failed[@]}" >&2
 	echo "The fix is upstream: a dependency bump in the next release. Until then this stays red, on purpose." >&2
 	exit 1
