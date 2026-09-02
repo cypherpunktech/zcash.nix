@@ -26,23 +26,15 @@ on:
   schedule:
     - cron: "23 6 * * 1"
 
-# Cancel a run only when a newer one tests the SAME thing. Pushing to a PR
-# supersedes its own previous run, so cancelling there saves runner time and
-# loses nothing. Consecutive pushes to main do not supersede each other: each
-# commit adds a different package, and these builds take tens of minutes from
-# source, so cancelling one throws away the only evidence that the previous
-# package built on Linux. Learned by watching it happen to zebra.
-#
-# What this does and does not buy, measured rather than assumed: a RUNNING
-# build now survives the next push to main. A QUEUED one still does not --
-# GitHub keeps at most one pending run per concurrency group, so a third push
-# supersedes the second's queued run regardless of this setting. The tip of
-# main is therefore always built; intermediate commits during a rapid series
-# may not be. Dropping the group entirely would build every commit, at several
-# cold multi-package runs in parallel, for binaries nobody ships: only the tip
-# of main reaches the cache and the registry.
+# A PR's runs share one group and cancel each other: a newer push to the PR
+# supersedes the older run and loses nothing. Every push to main gets its own
+# group, so nothing on main is ever cancelled. GitHub keeps at most one
+# QUEUED run per group and supersedes it when another arrives, and a
+# superseded run completes as "cancelled" -- which the README badge shows as
+# the state of main. Three quick pushes made the badge red with nothing
+# wrong. Building every commit costs runner time, which is free here.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
