@@ -35,6 +35,13 @@ rustPlatform.buildRustPackage {
     "zakura"
   ];
 
+  # `indexer` is off in upstream's default build and required by zallet: it
+  # adds a spending-transaction index to the state database (the on-disk
+  # format version carries `+indexer`), which zallet's backend, compiled with
+  # the same feature, reads directly. A node without it produces a database
+  # the wallet cannot use, and services.zcash.zallet would be a lie.
+  buildFeatures = [ "indexer" ];
+
   # Node integration tests: they want live peers and real chain state.
   doCheck = false;
 

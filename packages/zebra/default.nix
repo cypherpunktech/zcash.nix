@@ -43,6 +43,20 @@ rustPlatform.buildRustPackage {
     "zebrad"
   ];
 
+  # `indexer` is off in upstream's default build and required by zallet: it
+  # adds a spending-transaction index to the state database (the on-disk
+  # format version carries `+indexer`), which zallet's backend, compiled with
+  # the same feature, reads directly. A node without it produces a database
+  # the wallet cannot use, and services.zcash.zallet would be a lie.
+  #
+  # `internal-miner` is what makes Regtest usable: without it a local network
+  # has no way to produce blocks except an external miner. Inert unless
+  # `mining.internal_miner = true`; tests/stack.nix depends on it.
+  buildFeatures = [
+    "indexer"
+    "internal-miner"
+  ];
+
   # Zebra's suite is node integration testing: it wants live network peers and
   # real chain state, neither of which exists in the sandbox. The smoke check
   # that runs the binary is this package's actual proof.
