@@ -6,8 +6,9 @@ A package **is** a directory. `flake.nix` finds it with `readDir`, so there is
 no registry to edit and nothing to forget.
 
 ```console
-$ mkdir -p packages/yourthing
-$ $EDITOR packages/yourthing/default.nix
+$ mkdir -p packages/yourthing && cd packages/yourthing
+$ nix flake init -t ../..#package   # the skeleton below, with every required field
+$ $EDITOR default.nix
 $ git add -A          # flakes only see git-TRACKED files
 $ just build yourthing
 ```

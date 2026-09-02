@@ -54,6 +54,9 @@ jobs:
           persist-credentials: false
       - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
       - run: nix flake check --all-systems --no-build
+      # update.yml runs nix-update through the devshell, and the consumer
+      # shell is an advertised output; neither is a check, so eval them here.
+      - run: nix develop .#default --command true && nix develop .#zcash --command true
 
   discover:
     uses: ./.github/workflows/discover.yml

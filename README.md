@@ -39,6 +39,16 @@ inputs.zcash-nix.url = "github:cypherpunktech/zcash.nix";
 
 # or as an overlay
 nixpkgs.overlays = [ zcash-nix.overlays.default ];
+
+# packaging your own Zcash tool: Rust that is bit-reproducible on darwin
+rustPlatform = zcash-nix.lib.reproducibleRustPlatform pkgs;
+```
+
+Hacking on the Zcash software itself — `cargo build` in a zebra or zaino
+checkout, with the rocksdb/bindgen/protoc environment that makes it build:
+
+```console
+$ nix develop github:cypherpunktech/zcash.nix#zcash
 ```
 
 > The repository is currently private, so these need a credential —

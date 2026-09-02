@@ -270,14 +270,57 @@
 
       formatter = eachSystem (pkgs: (treefmtFor pkgs).config.build.wrapper);
 
-      devShells = eachSystem (pkgs: {
-        default = pkgs.mkShellNoCC {
-          packages = [
-            pkgs.cachix
-            pkgs.just
-            pkgs.nix-update
-          ];
-        };
-      });
+      devShells = eachSystem (
+        pkgs:
+        let
+          packages = availableFor pkgs;
+        in
+        {
+          # For working on THIS repository.
+          default = pkgs.mkShellNoCC {
+            packages = [
+              pkgs.cachix
+              pkgs.just
+              pkgs.nix-update
+            ];
+          };
+
+          # For working on the Zcash software itself: the exact toolchain and
+          # native inputs (rustc, protoc, the bindgen hook and its libclang,
+          # go) that make zebra, zaino and lightwalletd build here, taken from
+          # the derivations rather than restated. `cargo build` in a zebra
+          # checkout works inside it; nothing is on PATH that the packages
+          # did not need.
+          zcash = pkgs.mkShell {
+            inputsFrom = lib.attrValues packages;
+            packages = [ pkgs.cargo-audit ];
+          };
+        }
+      );
+
+      # CONTRIBUTING.md's "Adding a package", executable:
+      #   mkdir packages/<name> && cd packages/<name> && nix flake init -t ../..#package
+      templates.package = {
+        path = ./templates/package;
+        description = "A packages/<name>/default.nix skeleton with every field this repository requires";
+        welcomeText = ''
+          Fill in the placeholders, then from the repository root:
+
+          ```
+          git add -A                  # flakes see only tracked files
+          nix build .#<name>          # twice: once per fake hash
+          nix run .#<name> -- --version
+          just check
+          ```
+        '';
+      };
+
+      # What a third-party packager of a Zcash tool actually needs from here:
+      # not the nine packages, the property that Rust built on this nixpkgs
+      # is bit-reproducible on darwin (see reproducibleRustPlatform), and the
+      # licence-derived answer to "may I put this in a public cache".
+      lib = {
+        inherit reproducibleRustPlatform redistributable;
+      };
     };
 }
