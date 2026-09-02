@@ -30,6 +30,14 @@ build PKG: stage
 update PKG: stage
     nix-update --flake --version=stable {{ PKG }}
 
+# The two trust gates (.github/workflows/trust.yml), runnable here in a minute.
+# Auditors come from the flake's pinned nixpkgs so local and CI agree.
+audit: stage
+    nix shell --inputs-from . nixpkgs#cargo-audit nixpkgs#govulncheck -c ./scripts/check-advisories.sh
+
+verify: stage
+    ./scripts/verify-upstream.sh
+
 # aarch64-darwin has no CI runner while this repo is private, so this machine
 # IS the darwin build farm: pushing from here is the only way anyone else gets
 # a prebuilt Apple Silicon binary.

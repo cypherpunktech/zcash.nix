@@ -97,6 +97,17 @@ jobs:
             git --no-pager diff
           fi
 
+      # Before building anything from it: where upstream signs its tags, the
+      # new tag must carry the maintainer's signature and hash to the source
+      # nix-update just pinned. A moved tag or a tampered tarball stops here,
+      # as a red job with the reason in it, never as a PR.
+      - name: Verify the new source is what the maintainer signed
+        if: steps.changed.outputs.changed == 'true'
+        env:
+          PACKAGES: ${{ matrix.package }}
+          SYSTEM: x86_64-linux
+        run: ./scripts/verify-upstream.sh
+
       # A bump that builds but produces a binary that cannot start is exactly
       # the breakage a version PR should catch, so the smoke check gates the PR
       # rather than only running after merge.

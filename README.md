@@ -109,6 +109,9 @@ Also unbuilt as developer tooling rather than deployables: `zebra-utils`,
 `update.yml` runs `nix-update` weekly, one PR per package, no auto-merge.
 `stale.yml` runs daily and fails if a pin falls behind — an updater that
 silently stops looks identical to one with nothing to do.
+`trust.yml` runs daily: cargo-audit and govulncheck over what each build
+vendors, and signature verification of the pinned tag where upstream signs
+one (today: zinder). Red means a vulnerable dependency shipped upstream.
 
 ## More
 

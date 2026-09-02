@@ -28,6 +28,18 @@ worse than an absent one. Pick something that exercises the thing that could
 plausibly be broken: for `zallet` it is `--version`, because the launcher passes
 it through to a backend binary and so a missing backend fails there.
 
+If upstream signs its release tags, add the signer:
+
+```nix
+passthru.upstreamSigners = ./allowed_signers;
+```
+
+with the file in ssh allowed-signers form (`email ssh-ed25519 AAAA...`),
+carrying only the key that actually signed the tag — `git cat-file tag <tag>`
+shows the signature, `ssh-keygen -Y find-principals` says which key made it.
+`just verify` must then print `verified` for the package. If upstream signs
+nothing, or only binaries, declare nothing: the gate lists it as unsigned.
+
 ## Adding a NixOS module
 
 Same rule: `modules/yourthing/default.nix`, discovered by `readDir`. A module is

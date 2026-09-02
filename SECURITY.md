@@ -32,12 +32,22 @@ alternative is unpinned, unreproducible, hand-installed binaries.
 
 ## What is NOT guaranteed
 
-- **We do not verify upstream release signatures.** The first time a hash is
-  recorded, it is taken from whatever GitHub served at that moment. Pinning
-  makes the source *immutable from then on*; it does not prove the source was
-  authentic to begin with. If you need that, verify the upstream tag signature
-  yourself against the `tag` and `hash` in the derivation before trusting a
-  build.
+- **Source authenticity is verified only where upstream signs it.** Pinning
+  makes the source *immutable from then on*; it does not prove the bytes were
+  the maintainer's to begin with. Where an upstream signs its release tags,
+  `scripts/verify-upstream.sh` checks that the pinned tag carries the
+  maintainer's signature (key pinned in `packages/<name>/allowed_signers`,
+  changed only by a reviewed commit) and that the signed tree hashes to the
+  exact source built here; it runs daily and before every version bump. Today
+  that covers zinder. zebra, zakura and zallet sign only their release
+  *binaries*; zaino and lightwalletd sign nothing. The daily run lists them as
+  unsigned, which is the state of the ecosystem, not a claim about it.
+- **Known-vulnerable dependencies are reported, not fixed here.**
+  `scripts/check-advisories.sh` runs cargo-audit over each lockfile a build
+  vendors and govulncheck over the Go binary, daily. It is red whenever any
+  package ships a dependency with a published advisory, and stays red until
+  upstream releases the bump: the fix is a version PR, not a patch carried in
+  this repository. Check the `trust` workflow before running a node from here.
 - **Upstream test suites are not run.** Every package sets `doCheck = false`:
   these are node, indexer and wallet integration suites that want live network
   peers and real chain state, neither of which exists in a build sandbox. What

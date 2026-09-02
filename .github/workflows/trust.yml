@@ -1,0 +1,64 @@
+# Two claims about the source, each written as something that can go red.
+#
+# advisories: no lockfile we build from names a dependency with a published
+# vulnerability. A pin does not change when an advisory is published, so no
+# other gate here can notice one. Red until upstream ships the bump -- on
+# purpose; a gate that is quietly green while a node runs a vulnerable h2 is
+# worse than none.
+#
+# provenance: where an upstream signs its release tags, the pinned tag carries
+# the maintainer's signature and its tree is byte-for-byte the pinned source.
+# Packages whose upstream signs nothing are listed as unsigned, which is the
+# honest answer to "which of these sources are verified" and the list to take
+# to those upstreams.
+#
+# Both are scripts, not derivations: each needs the network -- an advisory
+# database, a git remote -- and both can be rerun by anyone in a minute:
+# `just audit`, `just verify`. Daily, cheap: sources and one cached binary.
+name: trust
+
+permissions:
+  contents: read
+
+on:
+  schedule:
+    - cron: "23 6 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - scripts/check-advisories.sh
+      - scripts/verify-upstream.sh
+      - "packages/*/allowed_signers"
+      - .github/workflows/trust.yml
+
+jobs:
+  advisories:
+    runs-on: ubuntu-latest
+    env:
+      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      # Pull only: govulncheck wants the built lightwalletd, which check.yml
+      # already pushed.
+      - name: Cachix
+        if: env.CACHIX_AUTH_TOKEN != ''
+        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        with:
+          name: cypherpunktech
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: true
+      # The auditors come from the flake's own pinned nixpkgs, not a registry
+      # lookup, so a run is reproducible against the lockfile.
+      - run: nix shell --inputs-from . nixpkgs#cargo-audit nixpkgs#govulncheck -c ./scripts/check-advisories.sh
+
+  provenance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      - run: ./scripts/verify-upstream.sh

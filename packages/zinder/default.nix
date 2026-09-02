@@ -56,6 +56,14 @@ rustPlatform.buildRustPackage {
   # wallet at, so it is the package's mainProgram.
   passthru.smokeArgs = [ "--version" ];
 
+  # Upstream signs its release tags (ssh, by the release manager). This is the
+  # key, in the allowed-signers form git verifies against; scripts/
+  # verify-upstream.sh checks that the pinned tag carries its signature and
+  # that the signed tree is byte-for-byte the source built here. Pinned from
+  # GitHub's key listing for the account once; a rotation is a change to this
+  # file that a reviewer sees, not something fetched at check time.
+  passthru.upstreamSigners = ./allowed_signers;
+
   meta = {
     description = "Service-oriented Zcash indexer with native and lightwalletd APIs";
     homepage = "https://github.com/ZcashFoundation/zinder";
