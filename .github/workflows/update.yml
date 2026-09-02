@@ -1,4 +1,13 @@
-# Version bumps, one PR per package.
+# error, so three months of total failure looked exactly like three months of
+# "nothing to update". So: no branch deletion on failure, no `|| true`. A
+# broken bump leaves a red job and a branch you can look at, and stale.yml
+# independently asserts that bumps are actually happening.
+#
+# Bumps DO merge themselves -- once the full check.yml run on the branch is
+# green, through GitHub's auto-merge and a ruleset on main that requires it.
+# The gate that stands in for a reader is: builds on every claimed platform,
+# the binary runs, the VM tests pass, the tag verifies where upstream signs.
+# A red run leaves the PR open with the failure on it.# Version bumps, one PR per package.
 #
 # The design constraint is negative: this workflow must never be able to fail
 # quietly. helium-flake's updater closed and deleted its own branch on every
@@ -16,6 +25,8 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  # gh workflow run, to put checks on the PR it opened.
+  actions: write
 
 concurrency:
   group: update
@@ -120,6 +131,7 @@ jobs:
       # bump of a consensus node should land itself. delete-branch stays false
       # so a failed run leaves evidence behind instead of tidying itself away.
       - name: Open PR
+        id: pr
         if: steps.changed.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
         with:
@@ -137,5 +149,22 @@ jobs:
             Automated version bump by `nix-update`.
 
             Built and smoke-tested on x86_64-linux by this run. The full
-            per-platform matrix runs on this PR via `check.yml`; read it before
-            merging — a consensus node's version bump is not a rubber stamp.
+            matrix, VM tests included, runs on this branch via `check.yml`,
+            and the PR merges itself when that is green.
+
+      # A PR opened with GITHUB_TOKEN triggers no workflows, by GitHub's rule
+      # against runaway automation -- so without this step the PR would carry
+      # no checks at all. workflow_dispatch is the one event that rule allows,
+      # and a run dispatched on the branch reports its checks on the branch's
+      # head, which is the PR's head. Then auto-merge: GitHub merges when the
+      # ruleset on main is satisfied, which requires check.yml's `ci` job. If
+      # that job is red the PR stays open with the reason on it, which is what
+      # a red bump should do.
+      - name: Test the branch, then merge when green
+        if: steps.pr.outputs.pull-request-number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ steps.pr.outputs.pull-request-number }}
+        run: |
+          gh workflow run check.yml --ref 'update/${{ matrix.package }}'
+          gh pr merge --auto --squash "$PR"

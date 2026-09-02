@@ -238,3 +238,20 @@ jobs:
               --platforms "$platforms" \
               --template "ghcr.io/cypherpunktech/${{ matrix.image }}:$tag-ARCH" \
               --target "ghcr.io/cypherpunktech/${{ matrix.image }}:$tag"
+
+  # One status for the ruleset on main to require: green iff every job it
+  # depends on is green (or skipped, which is a platform not claimed). Matrix
+  # jobs cannot be required by name -- their names carry the package and
+  # system -- so this is the name that can be. It runs even when something
+  # failed (`if: always()`), because a required check that never reports is
+  # a PR that never merges and never says why.
+  ci:
+    needs: [eval, build, vm, image]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          jq -e 'all(.[]; .result == "success" or .result == "skipped")' <<<"$NEEDS" \
+            || { echo "::error::a required job failed: $(jq -c 'map_values(.result)' <<<"$NEEDS")"; exit 1; }
