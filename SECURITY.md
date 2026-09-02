@@ -81,9 +81,8 @@ cypherpunktech.cachix.org-1:WKo2WboMVH8HUtCKNsSFx31YQibaJ2eocruFvAzWgA4=
 ```
 
 Nix verifies that signature before using anything from the cache. Using the
-cache means trusting whoever can push to it, which currently includes a
-maintainer's workstation — aarch64-darwin binaries are built there because a
-private repository has no macOS runner. If that trust is not acceptable to you,
+cache means trusting whoever can push to it: CI, and maintainers holding the
+token (`just push-cache`). If that trust is not acceptable to you,
 do not enable the substituter; everything builds from source without it, and
 Nix will not use a flake's advertised cache for an untrusted user anyway.
 

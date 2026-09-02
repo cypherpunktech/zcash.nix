@@ -114,10 +114,8 @@ stdenvNoCC.mkDerivation {
       asl20
     ];
     mainProgram = "zallet";
-    # Every platform here has been built AND had its binary run. x86_64-linux
-    # and aarch64-linux by CI; aarch64-darwin on a maintainer's machine, which
-    # is the weakest of the three and stays that way until macOS runners are
-    # affordable (CI_MACOS in .github/workflows/discover.yml).
+    # Every platform here has been built AND had its binary run, by CI on all
+    # three (.github/workflows/discover.yml decides the runners).
     platforms = [
       "aarch64-darwin"
       "aarch64-linux"

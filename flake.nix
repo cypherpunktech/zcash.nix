@@ -23,9 +23,8 @@
   # keeps it. Nix still asks before trusting a flake's nixConfig unless the user
   # is a trusted-user, which is the correct place for that decision to sit.
   #
-  # aarch64-darwin binaries reach this cache only by being pushed from a
-  # maintainer's Mac (`just push-cache <pkg>`): while the repo is private there
-  # is no macOS runner, so nothing else can produce them.
+  # CI fills it for all three systems (discover.yml decides the runners);
+  # `just push-cache <pkg>` lets a maintainer publish a build ahead of CI.
   nixConfig = {
     extra-substituters = [ "https://cypherpunktech.cachix.org" ];
     extra-trusted-public-keys = [

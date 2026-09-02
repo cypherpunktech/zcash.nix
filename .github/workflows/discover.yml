@@ -77,22 +77,12 @@ jobs:
           echo "list=$list" >> "$GITHUB_OUTPUT"
           echo "vm tests: $list"
 
-      # Two variables, not one, because the two extra runners cost differently
-      # and the reasoning for gating them is not the same.
-      #
-      # macOS is billed at 10x against a free org plan's 2000 minutes, so one
-      # cold zebra build there is a meaningful fraction of the month. That is a
-      # real reason to leave it off.
-      #
-      # arm64 Linux is NOT known to be expensive. It was originally gated
-      # alongside macOS by inheriting macOS's justification without checking,
-      # which is how a cheap thing ends up switched off for an expensive
-      # thing's reason. Separating them means turning arm64 Linux on is its own
-      # decision, and its cost can be observed rather than assumed.
-      #
-      # Whatever runs here defines what meta.platforms may honestly claim:
-      # aarch64-linux stays out of every package's platforms list until a build
-      # here proves it.
+      # Two switches, both on: the runners exist as repository variables
+      # because their cost depends on the plan (macOS is billed at 10x on a
+      # private free-plan org and free on a public repository), and because
+      # turning one off must be a deliberate act with a name. Whatever runs
+      # here defines what meta.platforms may honestly claim: a system leaves
+      # this list, and it leaves every package's platforms list with it.
       - id: targets
         env:
           ARM_LINUX: ${{ vars.CI_ARM_LINUX }}

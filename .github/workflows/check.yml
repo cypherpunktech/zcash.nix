@@ -39,8 +39,8 @@ on:
 # supersedes the second's queued run regardless of this setting. The tip of
 # main is therefore always built; intermediate commits during a rapid series
 # may not be. Dropping the group entirely would build every commit, at several
-# cold multi-package runs in parallel -- not affordable on this repo's free
-# private-org minutes. Revisit when the repo goes public.
+# cold multi-package runs in parallel, for binaries nobody ships: only the tip
+# of main reaches the cache and the registry.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}

@@ -59,9 +59,6 @@ $ docker run -v zakura:/data ghcr.io/cypherpunktech/zakura:1.3.0 start
 $ nix build .#images.x86_64-linux.zakura && docker load < result   # or build it
 ```
 
-> The repository is currently private, so these need a credential —
-> `git+ssh://git@github.com/cypherpunktech/zcash.nix`.
-
 ## NixOS modules
 
 ```nix
@@ -116,8 +113,8 @@ nix.settings = {
 };
 ```
 
-aarch64-darwin binaries are pushed from a maintainer's machine; a private repo
-has no macOS runner.
+All three systems are built by CI and pushed to the cache; a maintainer can
+also push a darwin build ahead of CI (`just push-cache <pkg>`).
 
 ## Platforms
 

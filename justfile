@@ -38,9 +38,9 @@ audit: stage
 verify: stage
     ./scripts/verify-upstream.sh
 
-# aarch64-darwin has no CI runner while this repo is private, so this machine
-# IS the darwin build farm: pushing from here is the only way anyone else gets
-# a prebuilt Apple Silicon binary.
+# Publish a build from this machine ahead of CI. Refuses anything whose licence
+# does not allow redistribution -- the same rule CI applies through its
+# pushFilter, so the two doors to the cache cannot disagree.
 push-cache PKG: (build PKG)
     @test "$(nix eval .#{{ PKG }}.redistributable)" = true || { echo "{{ PKG }}: its licence does not permit redistribution; not pushing" >&2; exit 1; }
     cachix push cypherpunktech ./result
