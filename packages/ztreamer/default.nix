@@ -35,8 +35,8 @@ rustPlatform.buildRustPackage {
   src = fetchFromGitHub {
     owner = "distractedm1nd";
     repo = "ztreamer";
-    rev = "0911505ee38f05a7481743e7e408d51d6c30f4f0";
-    hash = "sha256-zGfUOInpppNLjaXLanPQ3RzBbQG2+qso7Hnk0Vbkv+Q=";
+    rev = "6d572976fac983b02f431e812bab2a963431d419";
+    hash = "sha256-KpnOzur28nOqyEkjOwPBe+vhtuD9WbIVzu5LvJeK6k4=";
   };
 
   cargoHash = "sha256-J9jz2CygAdS+OBDdFykgry+FJk23WNMBoNvgofq/vxo=";
