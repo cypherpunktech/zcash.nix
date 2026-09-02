@@ -9,9 +9,6 @@
 
 Nix packages and NixOS modules for the [Zcash](https://z.cash) ecosystem, built from pinned source.
 
-nixpkgs ships one Zcash node, zcashd, which is sunset. This repository packages the whole post-zcashd
-stack, runs each program as a hardened service, and proves every claim in CI before anything ships.
-
 ## Packages
 
 | Package | | Binaries |
@@ -26,8 +23,7 @@ stack, runs each program as a hardened service, and proves every claim in CI bef
 | **zallet** | RPC wallet replacing zcashd's | `zallet` and its zebra backend |
 | **zpay** | Payments facilitator (x402, MPP) | `zpay-runtime`, `zspend-runtime` |
 
-Built and run on `x86_64-linux`, `aarch64-linux`, and `aarch64-darwin`. `ztreamer` has no licence
-upstream, so it is `unfree`: it builds locally and is never served from the cache.
+Built and run on `x86_64-linux`, `aarch64-linux`, and `aarch64-darwin`.
 
 ## Usage
 

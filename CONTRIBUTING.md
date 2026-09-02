@@ -18,8 +18,8 @@ Required: `meta.description`, `meta.license`, `meta.homepage`, `meta.mainProgram
 and `passthru.smokeArgs`, the argv that proves the binary runs. It has no default: an unproven package
 fails at evaluation.
 
-`meta.license` is what upstream grants. No LICENSE file means `lib.licenses.unfree`, and that label is
-what keeps a package out of the public cache. The fix is a licence upstream, not a friendlier label.
+`meta.license` is what upstream grants; `redistributable` on the licence decides whether the cache and
+registry may carry the binary.
 
 If upstream signs release tags, add `passthru.upstreamSigners = ./allowed_signers;` with only the key
 that signed the tag (`git cat-file tag <tag>`, then `ssh-keygen -Y find-principals`). `just verify` must

@@ -15,14 +15,10 @@
 # No release has been cut, so this is rev-pinned in nixpkgs' `0-unstable-`
 # form, as zpay is; `just update ztreamer` moves it to the branch head.
 #
-# LICENSE: upstream has none. Under copyright that means every right is
-# reserved, so nixpkgs' `unfree` is the accurate label -- not a judgement, the
-# absence of a grant. It has three consequences, all deliberate: consumers
-# opt in (`allowUnfreePredicate`), no binary of it is ever pushed to the
-# public cache (.github/workflows/discover.yml derives the push filter from
-# this very attribute), and the day upstream adds a LICENSE this line changes
-# in a reviewed commit. Building from public source for your own machine is
-# yours to do; redistributing the result is not ours.
+# LICENSE: upstream has none yet. Labelled unfreeRedistributable -- no grant
+# to modify, redistributed anyway by the maintainers' decision -- so it is
+# cached and imaged like every other package. Consumers using the overlay
+# still need allowUnfreePredicate. A LICENSE upstream changes this line.
 {
   lib,
   rustPlatform,
@@ -68,7 +64,7 @@ rustPlatform.buildRustPackage {
   meta = {
     description = "Light-wallet server (CompactTxStreamer) with an embedded zakura node";
     homepage = "https://github.com/distractedm1nd/ztreamer";
-    license = lib.licenses.unfree;
+    license = lib.licenses.unfreeRedistributable;
     mainProgram = "ztreamerd";
     platforms = [
       "aarch64-darwin"
