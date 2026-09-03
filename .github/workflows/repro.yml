@@ -123,7 +123,6 @@ jobs:
       # Pull only. This job checks binaries; producing them is check.yml's job,
       # and a gate that also feeds the cache it compares against is circular.
       - name: Cachix
-        if: env.CACHIX_AUTH_TOKEN != ''
         uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: cypherpunktech

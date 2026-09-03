@@ -44,7 +44,6 @@ jobs:
       # Pull only: govulncheck wants the built lightwalletd, which check.yml
       # already pushed.
       - name: Cachix
-        if: env.CACHIX_AUTH_TOKEN != ''
         uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: cypherpunktech

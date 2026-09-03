@@ -72,14 +72,17 @@ jobs:
           persist-credentials: false
       - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
-      # Skipped, with a warning rather than a failure, until the token exists.
-      # Without it every run rebuilds every package from source.
+      # Always: without the substituter every job rebuilds every package from
+      # source, which is what happened to dependabot's first PR (vm-units spent
+      # two hours compiling zebra on one runner). Pull needs no token.
       - name: Cachix
-        if: env.CACHIX_AUTH_TOKEN != ''
         uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: cypherpunktech
+          # Empty on dependabot and fork PRs, which get no secrets. The cache is
+          # public, so pulling never needed it; only the push does.
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: ${{ env.CACHIX_AUTH_TOKEN == '' }}
           pushFilter: ${{ needs.discover.outputs.unredistributable }}
 
       # A package that does not claim this system is absent from that system's
@@ -136,11 +139,13 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
       - name: Cachix
-        if: env.CACHIX_AUTH_TOKEN != ''
         uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: cypherpunktech
+          # Empty on dependabot and fork PRs, which get no secrets. The cache is
+          # public, so pulling never needed it; only the push does.
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: ${{ env.CACHIX_AUTH_TOKEN == '' }}
           pushFilter: ${{ needs.discover.outputs.unredistributable }}
 
       # The runner must actually have KVM, or the test silently falls back to
@@ -178,7 +183,6 @@ jobs:
           persist-credentials: false
       - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
       - name: Cachix
-        if: env.CACHIX_AUTH_TOKEN != ''
         uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: cypherpunktech
