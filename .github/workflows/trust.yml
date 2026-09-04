@@ -12,9 +12,16 @@
 # honest answer to "which of these sources are verified" and the list to take
 # to those upstreams.
 #
-# Both are scripts, not derivations: each needs the network -- an advisory
-# database, a git remote -- and both can be rerun by anyone in a minute:
-# `just audit`, `just verify`. Daily, cheap: sources and one cached binary.
+# sources: every hash typed into packages/ still re-fetches to the bytes it
+# names. A fixed output's store path depends on its hash alone, so once it
+# exists nothing ever runs the fetcher again -- a bumped tag with an old
+# hash, or a hash pasted from a sibling, is green forever. `--rebuild` is
+# the one thing that executes it; scripts/check-fods.sh does that for each.
+#
+# All three are scripts, not derivations: each needs the network -- an
+# advisory database, a git remote, upstream's tarballs -- and each can be
+# rerun by anyone in a minute: `just audit`, `just verify`, `just fods`.
+# Daily, cheap: sources and one cached binary.
 name: trust
 
 permissions:
@@ -28,6 +35,7 @@ on:
     paths:
       - scripts/check-advisories.sh
       - scripts/verify-upstream.sh
+      - scripts/check-fods.sh
       - "packages/*/allowed_signers"
       - .github/workflows/trust.yml
 
@@ -61,3 +69,23 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/nix
       - run: ./scripts/verify-upstream.sh
+
+  sources:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/nix
+      # Pull only: the point is to re-fetch what the cache already serves and
+      # see the same bytes, so the reference must come from the cache.
+      - name: Cachix
+        uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
+        with:
+          name: cypherpunktech
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          skipPush: true
+      - run: ./scripts/check-fods.sh
+        env:
+          SYSTEM: x86_64-linux
