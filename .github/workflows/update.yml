@@ -41,23 +41,23 @@ jobs:
       fail-fast: false
       matrix:
         package: ${{ fromJSON(needs.discover.outputs.packages) }}
+    timeout-minutes: 300
     env:
-      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      PKG: ${{ matrix.package }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      - uses: ./.github/actions/nix
 
       - name: Cachix
         uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: cypherpunktech
-          # Empty on dependabot and fork PRs, which get no secrets. The cache is
-          # public, so pulling never needed it; only the push does.
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          skipPush: ${{ env.CACHIX_AUTH_TOKEN == '' }}
-          pushFilter: ${{ needs.discover.outputs.unredistributable }}
+          # No push without a token, none from a run in which any package's
+          # licence forbids it: see `pushable` in discover.yml.
+          skipPush: ${{ secrets.CACHIX_AUTH_TOKEN == '' || needs.discover.outputs.pushable != 'true' }}
 
       # nix-update rewrites version, src hash and cargoHash in place, finding
       # the file through meta.position. It builds to discover the new hashes,
@@ -73,7 +73,7 @@ jobs:
       # `--version=` here is nix-update's TARGET, not a request to print its own.
       - name: Bump the pin
         run: |
-          rev=$(nix eval --raw '.#${{ matrix.package }}.src.rev')
+          rev=$(nix eval --raw ".#\"$PKG\".src.rev")
           tag=${rev#refs/tags/}
           if [ "$tag" = "$rev" ]; then
             # Not a tag at all: a bare commit, because upstream cuts no releases.
@@ -91,8 +91,8 @@ jobs:
           else
             target=stable
           fi
-          echo "bumping ${{ matrix.package }} (tag: $tag) toward: $target"
-          nix develop --command nix-update --flake --version="$target" '${{ matrix.package }}'
+          echo "bumping $PKG (tag: $tag) toward: $target"
+          nix develop --command nix-update --flake --version="$target" "$PKG"
 
       - name: Did anything change?
         id: changed
@@ -102,7 +102,7 @@ jobs:
             echo "already on the newest release"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "version=$(nix eval --raw '.#${{ matrix.package }}.version')" >> "$GITHUB_OUTPUT"
+            echo "version=$(nix eval --raw ".#\"$PKG\".version")" >> "$GITHUB_OUTPUT"
             git --no-pager diff
           fi
 
@@ -122,11 +122,12 @@ jobs:
       # rather than only running after merge.
       - name: Smoke test — runs the new binary
         if: steps.changed.outputs.changed == 'true'
-        run: nix build -L '.#checks.x86_64-linux.smoke-${{ matrix.package }}'
+        run: nix build -L ".#checks.x86_64-linux.\"smoke-$PKG\""
 
-      # No auto-merge: this repo is not at the scale where an unread version
-      # bump of a consensus node should land itself. delete-branch stays false
-      # so a failed run leaves evidence behind instead of tidying itself away.
+      # The PR is the record and the merge below is its reader: the full
+      # matrix, the VM tests and the provenance check stand in for a human,
+      # and stale.yml asserts the outcome. delete-branch stays false so a
+      # failed run leaves evidence behind instead of tidying itself away.
       - name: Open PR
         id: pr
         if: steps.changed.outputs.changed == 'true'

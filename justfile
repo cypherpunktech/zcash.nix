@@ -12,9 +12,12 @@ stage:
 check: stage
     nix flake check -L
 
-# Cheap gate for CI: proves the flake evaluates for all three systems.
+# Cheap gate for CI: proves the flake evaluates for all three systems. The
+# two extra flags are what check.yml's eval job runs under (its nix.conf
+# forbids import-from-derivation; --no-update-lock-file refuses an input
+# added without `nix flake lock`), so local and CI ask the same question.
 eval: stage
-    nix flake check --all-systems --no-build
+    nix flake check --all-systems --no-build --no-update-lock-file --no-allow-import-from-derivation
 
 # --no-cache is not paranoia. treefmt caches by mtime, so a plain `nix fmt` can
 # report "0 changed" on files it has already seen while checks.formatting --
@@ -37,10 +40,3 @@ audit: stage
 
 verify: stage
     ./scripts/verify-upstream.sh
-
-# Publish a build from this machine ahead of CI. Refuses anything whose licence
-# does not allow redistribution -- the same rule CI applies through its
-# pushFilter, so the two doors to the cache cannot disagree.
-push-cache PKG: (build PKG)
-    @test "$(nix eval .#{{ PKG }}.redistributable)" = true || { echo "{{ PKG }}: its licence does not permit redistribution; not pushing" >&2; exit 1; }
-    cachix push cypherpunktech ./result

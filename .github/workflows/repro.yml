@@ -76,6 +76,7 @@ jobs:
   select:
     needs: discover
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       packages: ${{ steps.pick.outputs.packages }}
       targets: ${{ steps.pick.outputs.targets }}
@@ -100,6 +101,7 @@ jobs:
     needs: select
     name: ${{ matrix.package }} · ${{ matrix.target.system }}
     runs-on: ${{ matrix.target.runner }}
+    timeout-minutes: 300
     strategy:
       fail-fast: false
       matrix:
@@ -111,14 +113,15 @@ jobs:
       run:
         shell: bash
     env:
-      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      PKG: ${{ matrix.package }}
+      SYS: ${{ matrix.target.system }}
       RUNS: ${{ inputs.runs || 3 }}
       LABEL: ${{ matrix.package }} · ${{ matrix.target.system }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      - uses: ./.github/actions/nix
 
       # Pull only. This job checks binaries; producing them is check.yml's job,
       # and a gate that also feeds the cache it compares against is circular.
@@ -138,12 +141,12 @@ jobs:
       - name: What to rebuild
         id: targets
         run: |
-          targets=$(nix eval --json '.#packages.${{ matrix.target.system }}' --apply \
-            'p: map (d: d.drvPath) (if p ? ${{ matrix.package }} then p.${{ matrix.package }}.parts or [ p.${{ matrix.package }} ] else [ ])')
+          targets=$(nix eval --json ".#packages.$SYS" --apply \
+            "p: map (d: d.drvPath) (if p ? \"$PKG\" then p.\"$PKG\".parts or [ p.\"$PKG\" ] else [ ])")
           echo "targets=$targets" >> "$GITHUB_OUTPUT"
           echo "$targets"
           if [ "$targets" = "[]" ]; then
-            echo "::notice title=Not checked::${{ matrix.package }} does not claim ${{ matrix.target.system }} — see meta.badPlatforms in packages/${{ matrix.package }}/default.nix"
+            echo "::notice title=Not checked::$PKG does not claim $SYS — see meta.badPlatforms in packages/$PKG/default.nix"
           fi
 
       # From the cache if it is there, from source if not. Either way the

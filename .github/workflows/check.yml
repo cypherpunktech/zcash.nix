@@ -6,7 +6,9 @@
 #   build — the only thing that proves a binary links and RUNS. One job per
 #           package so a single failure cannot hide the rest.
 #
-# Actions are SHA-pinned: tags are mutable.
+# Actions are SHA-pinned: tags are mutable. Matrix values reach shell only
+# through env, quoted: a Nix attribute name is an arbitrary string, and a
+# pull request decides what names the flake has.
 name: check
 
 # Least privilege, stated rather than inherited: these jobs read the repo
@@ -40,12 +42,15 @@ concurrency:
 jobs:
   eval:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
-      - run: nix flake check --all-systems --no-build
+      - uses: ./.github/actions/nix
+      # --no-update-lock-file: an input added to flake.nix without `nix flake
+      # lock` would otherwise pass by being re-locked in memory.
+      - run: nix flake check --all-systems --no-build --no-update-lock-file
       # update.yml runs nix-update through the devshell, and the consumer
       # shell is an advertised output; neither is a check, so eval them here.
       - run: nix develop .#default --command true && nix develop .#zcash --command true
@@ -57,6 +62,7 @@ jobs:
     needs: discover
     name: ${{ matrix.package }} · ${{ matrix.target.system }}
     runs-on: ${{ matrix.target.runner }}
+    timeout-minutes: 180
     strategy:
       # Every package's result is wanted on every run: one red package must not
       # cancel the others, or a single early failure hides the real state.
@@ -65,25 +71,27 @@ jobs:
         package: ${{ fromJSON(needs.discover.outputs.packages) }}
         target: ${{ fromJSON(needs.discover.outputs.targets) }}
     env:
-      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      PKG: ${{ matrix.package }}
+      SYS: ${{ matrix.target.system }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      - uses: ./.github/actions/nix
 
       # Always: without the substituter every job rebuilds every package from
       # source, which is what happened to dependabot's first PR (vm-units spent
-      # two hours compiling zebra on one runner). Pull needs no token.
+      # two hours compiling zebra on one runner). Pull needs no token, and the
+      # token exists in this step only.
       - name: Cachix
         uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: cypherpunktech
-          # Empty on dependabot and fork PRs, which get no secrets. The cache is
-          # public, so pulling never needed it; only the push does.
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          skipPush: ${{ env.CACHIX_AUTH_TOKEN == '' }}
-          pushFilter: ${{ needs.discover.outputs.unredistributable }}
+          # No push without a token (dependabot and fork PRs get none), and
+          # none from a run in which any package's licence forbids it: see
+          # `pushable` in discover.yml.
+          skipPush: ${{ secrets.CACHIX_AUTH_TOKEN == '' || needs.discover.outputs.pushable != 'true' }}
 
       # A package that does not claim this system is absent from that system's
       # packages output entirely, so there is nothing here to build. Announce
@@ -91,21 +99,21 @@ jobs:
       - name: Platform claimed?
         id: claim
         run: |
-          claimed=$(nix eval --json '.#packages.${{ matrix.target.system }}' --apply 'p: p ? ${{ matrix.package }}')
+          claimed=$(nix eval --json ".#packages.$SYS" --apply "p: p ? \"$PKG\"")
           echo "claimed=$claimed" >> "$GITHUB_OUTPUT"
           if [ "$claimed" != "true" ]; then
-            echo "::notice title=Not built::${{ matrix.package }} does not claim ${{ matrix.target.system }} — see meta.badPlatforms in packages/${{ matrix.package }}/default.nix"
+            echo "::notice title=Not built::$PKG does not claim $SYS — see meta.badPlatforms in packages/$PKG/default.nix"
           fi
 
       - name: Build
         if: steps.claim.outputs.claimed == 'true'
-        run: nix build -L '.#packages.${{ matrix.target.system }}.${{ matrix.package }}'
+        run: nix build -L ".#packages.$SYS.\"$PKG\""
 
       # Separate from Build so the log says which one broke: a green build with
       # a red smoke test means the binary linked but cannot start.
       - name: Smoke test — runs the binary
         if: steps.claim.outputs.claimed == 'true'
-        run: nix build -L '.#checks.${{ matrix.target.system }}.smoke-${{ matrix.package }}'
+        run: nix build -L ".#checks.$SYS.\"smoke-$PKG\""
 
   # NixOS VM tests: boot a machine, start the service, assert it runs and that
   # the hardening is really applied. This is the only gate that covers the unit
@@ -113,9 +121,9 @@ jobs:
   # syscall filter that kills the daemon produces packages that pass every
   # smoke check and a machine that does not work.
   #
-  # x86_64-linux only: nixosTest needs a Linux builder with KVM, which no macOS
-  # or darwin path provides. These therefore cannot be run on a maintainer's
-  # Mac at all, and CI is the only place they ever execute.
+  # x86_64-linux in CI: nixosTest needs a Linux builder with KVM, which these
+  # runners have. (A maintainer's Mac can run them too, through a Linux
+  # remote builder; see AGENTS.md.)
   #
   # After `build`, not beside it. A VM test instantiates the modules, and the
   # units test instantiates all of them, so it needs every package: from the
@@ -126,34 +134,32 @@ jobs:
     needs: [discover, build]
     name: vm-${{ matrix.test }}
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         test: ${{ fromJSON(needs.discover.outputs.vmtests) }}
     env:
-      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      TEST: ${{ matrix.test }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      - uses: ./.github/actions/nix
 
       - name: Cachix
         uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
           name: cypherpunktech
-          # Empty on dependabot and fork PRs, which get no secrets. The cache is
-          # public, so pulling never needed it; only the push does.
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          skipPush: ${{ env.CACHIX_AUTH_TOKEN == '' }}
-          pushFilter: ${{ needs.discover.outputs.unredistributable }}
+          skipPush: ${{ secrets.CACHIX_AUTH_TOKEN == '' || needs.discover.outputs.pushable != 'true' }}
 
       # The runner must actually have KVM, or the test silently falls back to
       # unbearably slow emulation. Fail loudly instead.
       - name: KVM available?
         run: test -e /dev/kvm || { echo "::error::no /dev/kvm on this runner; NixOS VM tests need it"; exit 1; }
 
-      - run: nix build -L '.#checks.x86_64-linux.vm-${{ matrix.test }}'
+      - run: nix build -L ".#checks.x86_64-linux.\"vm-$TEST\""
 
   # OCI images, one per redistributable package (flake.nix `images`), built
   # on each Linux target from the packages the matrix above just cached, and
@@ -164,6 +170,7 @@ jobs:
     needs: [discover, build]
     name: image ${{ matrix.image }} · ${{ matrix.target.system }}
     runs-on: ${{ matrix.target.runner }}
+    timeout-minutes: 60
     # packages: write is the GHCR push; contents: read is the checkout.
     permissions:
       contents: read
@@ -176,12 +183,14 @@ jobs:
         exclude:
           - target: { runner: macos-14, system: aarch64-darwin }
     env:
-      CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+      IMG: ${{ matrix.image }}
+      SYS: ${{ matrix.target.system }}
+      ARCH: ${{ matrix.target.system == 'aarch64-linux' && 'arm64' || 'amd64' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      - uses: ./.github/actions/nix
       - name: Cachix
         uses: cachix/cachix-action@5f2d7c5294214f71b873db4b969586b980625e71 # v17
         with:
@@ -192,18 +201,17 @@ jobs:
       - name: Build
         id: build
         run: |
-          nix build -L '.#images.${{ matrix.target.system }}.${{ matrix.image }}'
-          echo "tag=$(nix eval --raw '.#images.${{ matrix.target.system }}.${{ matrix.image }}.imageTag')" >> "$GITHUB_OUTPUT"
+          nix build -L ".#images.$SYS.\"$IMG\""
+          echo "tag=$(nix eval --raw ".#images.$SYS.\"$IMG\".imageTag")" >> "$GITHUB_OUTPUT"
 
       - name: Push
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
           TAG: ${{ steps.build.outputs.tag }}
-          ARCH: ${{ matrix.target.system == 'aarch64-linux' && 'arm64' || 'amd64' }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           nix shell --inputs-from . nixpkgs#skopeo -c skopeo login ghcr.io -u "$GITHUB_ACTOR" --password-stdin <<<"$GHCR_TOKEN"
-          nix shell --inputs-from . nixpkgs#skopeo -c skopeo copy docker-archive:result "docker://ghcr.io/cypherpunktech/${{ matrix.image }}:$TAG-$ARCH"
+          nix shell --inputs-from . nixpkgs#skopeo -c skopeo copy docker-archive:result "docker://ghcr.io/cypherpunktech/$IMG:$TAG-$ARCH"
 
   # The multi-arch tag: <version> pointing at whichever of the per-arch
   # images were pushed above. manifest-tool builds the list from remote
@@ -212,6 +220,7 @@ jobs:
     needs: [discover, image]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       packages: write
@@ -219,35 +228,82 @@ jobs:
       matrix:
         image: ${{ fromJSON(needs.discover.outputs.images) }}
     env:
+      IMG: ${{ matrix.image }}
       TARGETS: ${{ needs.discover.outputs.targets }}
       GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      - uses: ./.github/actions/nix
       - run: |
-          tag=$(nix eval --raw '.#images.x86_64-linux.${{ matrix.image }}.imageTag')
+          tag=$(nix eval --raw ".#images.x86_64-linux.\"$IMG\".imageTag")
           platforms=$(jq -r '[.[] | select(.system | endswith("-linux")) | if .system == "aarch64-linux" then "linux/arm64" else "linux/amd64" end] | join(",")' <<<"$TARGETS")
           nix shell --inputs-from . nixpkgs#manifest-tool -c \
             manifest-tool --username "$GITHUB_ACTOR" --password "$GHCR_TOKEN" push from-args \
               --platforms "$platforms" \
-              --template "ghcr.io/cypherpunktech/${{ matrix.image }}:$tag-ARCH" \
-              --target "ghcr.io/cypherpunktech/${{ matrix.image }}:$tag"
+              --template "ghcr.io/cypherpunktech/$IMG:$tag-ARCH" \
+              --target "ghcr.io/cypherpunktech/$IMG:$tag"
 
-  # One status for the ruleset on main to require: green iff every job it
-  # depends on is green (or skipped, which is a platform not claimed). Matrix
-  # jobs cannot be required by name -- their names carry the package and
-  # system -- so this is the name that can be. It runs even when something
-  # failed (`if: always()`), because a required check that never reports is
-  # a PR that never merges and never says why.
+  # The cache is only useful if it serves what CI just built, and nothing
+  # else observed whether a push landed: a revoked token is a silent skip,
+  # and the first to notice is a consumer compiling zebra from source.
+  # cachix-action pushes in its post step, after every step of a job, so
+  # the proof is a job of its own: every package on every system has a
+  # narinfo in the cache carrying our key's signature. `--no-contents`
+  # checks metadata and signature without downloading the NAR; evaluating a
+  # darwin outPath needs no darwin, so one Linux runner covers all three
+  # systems. Only where a push happened -- pushes come from main, never from
+  # pull requests -- and the store URL and key come from flake.nix rather
+  # than a second copy here.
+  cache:
+    needs: [discover, build]
+    if: github.event_name != 'pull_request' && needs.discover.outputs.pushable == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PACKAGES: ${{ needs.discover.outputs.packages }}
+      TARGETS: ${{ needs.discover.outputs.targets }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/nix
+      - run: |
+          store=$(nix eval --raw -f flake.nix nixConfig.extra-substituters.0)
+          key=$(nix eval --raw -f flake.nix nixConfig.extra-trusted-public-keys.0)
+          fail=0
+          for sys in $(jq -r '.[].system' <<<"$TARGETS"); do
+            for pkg in $(jq -r '.[]' <<<"$PACKAGES"); do
+              [ "$(nix eval --json ".#packages.$sys" --apply "p: p ? \"$pkg\"")" = true ] || continue
+              out=$(nix eval --raw ".#packages.$sys.\"$pkg\".outPath")
+              if nix store verify --store "$store" --trusted-public-keys "$key" --no-contents "$out" 2>/dev/null; then
+                echo "served   $sys  $pkg"
+              else
+                echo "::error title=Not served::$sys.$pkg is not in $store signed by our key: $out"
+                fail=1
+              fi
+            done
+          done
+          exit $fail
+
+  # One status for the ruleset on main to require: green iff discover
+  # succeeded and every job below it is green or skipped. Matrix jobs cannot
+  # be required by name -- their names carry the package and system -- so
+  # this is the name that can be. It runs even when something failed
+  # (`if: always()`), because a required check that never reports is a PR
+  # that never merges and never says why. discover is checked by name: when
+  # it fails, everything downstream of it is "skipped", which is a failure
+  # wearing a grey badge. A skip anywhere else means a job that had nothing
+  # to do (cache, on a pull request).
   ci:
-    needs: [eval, build, vm, image]
+    needs: [eval, discover, build, vm, image, cache]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - env:
           NEEDS: ${{ toJSON(needs) }}
         run: |
-          jq -e 'all(.[]; .result == "success" or .result == "skipped")' <<<"$NEEDS" \
+          jq -e '.discover.result == "success" and all(.[]; .result == "success" or .result == "skipped")' <<<"$NEEDS" \
             || { echo "::error::a required job failed: $(jq -c 'map_values(.result)' <<<"$NEEDS")"; exit 1; }

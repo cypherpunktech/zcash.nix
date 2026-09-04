@@ -1,0 +1,27 @@
+# Nix, configured the same way on every runner. One place, so the daemon
+# settings CI runs under are a policy rather than twelve copies of a block.
+#
+# Each line makes a claim SECURITY.md already states enforceable:
+#   sandbox / sandbox-fallback -- Nix's sandbox is on by default on Linux
+#     only, and a sandbox that cannot be set up falls back to none, silently.
+#     Off on darwin, every crate's build.rs ran unsandboxed with network.
+#   allow-import-from-derivation -- "no impurity"; IFD is the one flakes
+#     still permit, and nothing here uses it, which is when a guard is free.
+#   use-registries -- every reference is pinned through the lock
+#     (`--inputs-from .`); a bare `nixpkgs#x` would otherwise resolve to
+#     whatever unstable is today, and this makes it a red job instead.
+#   max-silent-time -- a wedged build fails with Nix's message after half
+#     an hour of silence, not GitHub's generic cancel after six hours.
+name: nix
+description: Install Nix with this repository's daemon settings
+runs:
+  using: composite
+  steps:
+    - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      with:
+        extra-conf: |
+          sandbox = true
+          sandbox-fallback = false
+          allow-import-from-derivation = false
+          use-registries = false
+          max-silent-time = 1800

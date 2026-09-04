@@ -133,8 +133,9 @@
 
       # Whether the licence lets binaries be served to others -- nixpkgs records
       # that per licence, a package may carry several, and a package that states
-      # none gets no benefit of the doubt. This is what decides what reaches the
-      # public cache (discover.yml, justfile), so it lives on the package.
+      # none gets no benefit of the doubt. This is what decides whether a CI
+      # run may push to the public cache at all (discover.yml), so it lives on
+      # the package.
       redistributable =
         pkg: pkg.meta ? license && lib.all (l: l.redistributable or false) (lib.toList pkg.meta.license);
 
@@ -175,8 +176,8 @@
 
       # OCI images: the distribution door for the operators who deploy
       # containers rather than NixOS. One per redistributable package -- the
-      # licence rule decides, so ztreamer is absent by the same attribute that
-      # keeps it out of the cache -- and only for Linux, since that is what a
+      # licence rule decides, the same `redistributable` that gates the cache
+      # push in discover.yml -- and only for Linux, since that is what a
       # container is. Nothing in the image that the package did not need:
       # its closure, CA certificates for TLS, /data for state, /tmp. Runs as
       # uid 1000 with HOME=/data, so every daemon's home-directory default
@@ -335,7 +336,6 @@
           # For working on THIS repository.
           default = pkgs.mkShellNoCC {
             packages = [
-              pkgs.cachix
               pkgs.just
               pkgs.nix-update
             ];

@@ -21,9 +21,9 @@ on:
       targets:
         description: JSON array of { runner, system } to build on
         value: ${{ jobs.discover.outputs.targets }}
-      unredistributable:
-        description: Regex of store paths that must not reach the public cache
-        value: ${{ jobs.discover.outputs.unredistributable }}
+      pushable:
+        description: "\"true\" iff every package's licence permits serving its binaries to others"
+        value: ${{ jobs.discover.outputs.pushable }}
       images:
         description: JSON array of OCI image names (Linux only)
         value: ${{ jobs.discover.outputs.images }}
@@ -31,17 +31,18 @@ on:
 jobs:
   discover:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       packages: ${{ steps.packages.outputs.list }}
       vmtests: ${{ steps.vmtests.outputs.list }}
       targets: ${{ steps.targets.outputs.list }}
-      unredistributable: ${{ steps.unredistributable.outputs.regex }}
+      pushable: ${{ steps.pushable.outputs.ok }}
       images: ${{ steps.images.outputs.list }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      - uses: ./.github/actions/nix
 
       - id: packages
         run: |
@@ -49,21 +50,19 @@ jobs:
           echo "list=$list" >> "$GITHUB_OUTPUT"
           echo "packages: $list"
 
-      # What the licence forbids serving to others. A package says so through
-      # passthru.redistributable (flake.nix, from meta.license); this turns the
-      # answer into the pushFilter every Cachix step applies, so an unfree
-      # package is built and tested like any other and never leaves the runner.
-      # Store paths carry the pname, so `-ztreamer-` catches the package and
-      # its vendored sources alike. (The ${n} below is Nix, hence the
-      # shellcheck directive.)
-      - id: unredistributable
+      # Whether the run may push to the public cache at all. A gate, not a
+      # filter: a store path cannot be kept out of a cache once anything that
+      # references it is pushed, and the VM tests' system closures reference
+      # every package. So either every package's licence permits
+      # redistribution (passthru.redistributable, from meta.license) and the
+      # run pushes, or one does not and the run pushes nothing.
+      - id: pushable
         run: |
           # shellcheck disable=SC2016
-          regex=$(nix eval --raw '.#packages.x86_64-linux' --apply 'ps:
-            builtins.concatStringsSep "|" (map (n: "-" + n + "-")
-              (builtins.filter (n: !ps.${n}.redistributable) (builtins.attrNames ps)))')
-          echo "regex=$regex" >> "$GITHUB_OUTPUT"
-          echo "not pushed: ${regex:-nothing}"
+          ok=$(nix eval --json '.#packages.x86_64-linux' --apply 'ps:
+            builtins.all (n: ps.${n}.redistributable) (builtins.attrNames ps)')
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+          echo "pushable: $ok"
 
       - id: images
         run: |
