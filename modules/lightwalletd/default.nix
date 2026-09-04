@@ -16,8 +16,6 @@ import ../lightwallet.nix {
     rpcHost = "--rpchost";
     rpcPort = "--rpcport";
     zcashConf = "--zcash-conf-path";
-    rpcUser = "--rpcuser";
-    rpcPassword = "--rpcpassword";
   };
   extraFlags = [
     "--log-file"

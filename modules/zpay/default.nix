@@ -46,17 +46,13 @@ in
       '';
     };
 
-    environmentFile = lib.mkOption {
-      type = lib.types.nullOr lib.types.path;
-      default = null;
-      description = ''
-        Path to a file of `KEY=value` lines, read by systemd at start.
-
-        This is where credentials go. The file is read by systemd as root
-        before the service drops to its own user, so it can live outside the
-        service's own state directory and be readable only by root.
-      '';
-    };
+    # EnvironmentFile= is read by systemd as root, so it is already what
+    # service.credentials gives a file-taking daemon; only the type and the
+    # store check are shared.
+    environmentFile = service.secretFile ''
+      A file of `KEY=value` lines, read by systemd at start. This is where
+      credentials go.
+    '';
 
     openFirewall = lib.mkOption {
       type = lib.types.bool;
@@ -66,6 +62,8 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [ (service.notInStore "services.zcash.zpay.environmentFile" cfg.environmentFile) ];
+
     systemd.services.zpay = {
       description = "zpay Zcash payments facilitator";
       documentation = [ "https://github.com/gustavovalverde/zpay" ];

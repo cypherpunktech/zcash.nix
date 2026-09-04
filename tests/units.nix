@@ -18,7 +18,10 @@ self: _: {
   name = "zcash-units";
 
   nodes.machine = {
-    imports = [ self.nixosModules.default ];
+    imports = [
+      self.nixosModules.default
+      ./fixtures/credentials.nix
+    ];
 
     services.zcash = {
       zebra.mainnet.enable = true;
@@ -35,8 +38,7 @@ self: _: {
       lightwalletd.main = {
         enable = true;
         insecureNoTLS = true;
-        rpcUser = "test";
-        rpcPassword = "test";
+        zcashConfPath = "/var/lib/test-secrets/zcash.conf";
       };
       lightwalletd-rs.main = {
         enable = true;

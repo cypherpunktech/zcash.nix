@@ -70,6 +70,54 @@ rec {
         }
     );
 
+  # A secret the unit needs -- a TLS key, an RPC credential file. Three rules
+  # follow from what a secret is, and each helper below is one of them.
+  #
+  # Its option is a STRING, never `types.path`: a path literal (`./tls.key`)
+  # type-checks as a path and is copied into /nix/store, world-readable,
+  # forever. As a string it is a type error. `notInStore` closes the two ways
+  # around that, `"${./tls.key}"` and pkgs.writeText.
+  #
+  # It reaches the unit through LoadCredential=, never on argv or in the
+  # store: pid 1 reads the operator's file as root and places a 0400 copy,
+  # owned by the service's uid, under /run/credentials/<unit>.service/. That
+  # is also the only way a DynamicUser can read a file at all -- its uid
+  # does not exist until the unit starts, so nothing can be chowned to it in
+  # advance -- which is why every other secret-delivery path here failed on
+  # first read with EACCES. Inside ExecStart the directory is `%d`; a config
+  # file that needs the literal path takes it from `credentialPath`.
+  secretFile =
+    description:
+    lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "/run/secrets/lightwalletd-tls.key";
+      description = ''
+        ${description}
+
+        A path outside the Nix store, readable by root: systemd hands the
+        service its own private copy, so the file's owner and mode do not
+        matter and it never touches the store or the unit file.
+      '';
+    };
+
+  credentials = files: {
+    LoadCredential = lib.mapAttrsToList (id: file: "${id}:${file}") (
+      lib.filterAttrs (_: file: file != null) files
+    );
+  };
+
+  credentialPath = unit: id: "/run/credentials/${unit}.service/${id}";
+
+  notInStore = what: file: {
+    assertion = file == null || !lib.hasPrefix builtins.storeDir file;
+    message = ''
+      ${what} points into the Nix store, which is world-readable. Point it
+      at a file outside the store, e.g. config.sops.secrets.<name>.path or
+      config.age.secrets.<name>.path; root readability is all it needs.
+    '';
+  };
+
   # The users a set of instances asks for, as a users.users / users.groups
   # pair. Two instances naming the same user merge into one definition.
   users =

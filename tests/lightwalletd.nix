@@ -2,16 +2,25 @@
 #
 # The pairing is the point: lightwalletd is useless alone, and the failure this
 # catches -- a backend it cannot reach, or credentials it cannot read -- only
-# appears when both units exist together.
-self: _: {
+# appears when both units exist together. Credentials and TLS key are real
+# files handed over as systemd credentials (tests/fixtures/credentials.nix): the
+# module's secret path is the one a hardened unit breaks on, so it is the one
+# the test walks.
+self:
+{ pkgs, ... }:
+let
+  certs = import "${pkgs.path}/nixos/tests/common/acme/server/snakeoil-certs.nix";
+in
+{
   name = "zcash-lightwalletd";
 
   nodes.machine =
-    { ... }:
+    { pkgs, ... }:
     {
       imports = [
         self.nixosModules.zebra
         self.nixosModules.lightwalletd
+        ./fixtures/credentials.nix
       ];
 
       services.zcash.zebra.regtest = {
@@ -35,16 +44,17 @@ self: _: {
       services.zcash.lightwalletd.main = {
         enable = true;
         rpcPort = 18232;
-        # A test machine with no certificate. Setting this deliberately is the
-        # module working as intended: without it the assertion refuses to build,
-        # which is the whole reason the assertion exists.
-        insecureNoTLS = true;
-        # lightwalletd requires a credential source or it exits at startup;
-        # zebra above runs with cookie auth off, so any pair works here.
-        rpcUser = "test";
-        rpcPassword = "test";
+        zcashConfPath = "/var/lib/test-secrets/zcash.conf";
+        tls.certFile = "/var/lib/test-secrets/tls.crt";
+        tls.keyFile = "/var/lib/test-secrets/tls.key";
         extraArgs = [ "--no-backend-check" ];
       };
+
+      # The CompactTxStreamer schema, from the protocol's reference source.
+      environment.systemPackages = [ pkgs.grpcurl ];
+      environment.etc."walletrpc".source = "${
+        self.packages.${pkgs.stdenv.hostPlatform.system}.lightwalletd.src
+      }/walletrpc";
 
       virtualisation.memorySize = 2048;
     };
@@ -56,17 +66,25 @@ self: _: {
     machine.wait_for_unit("lightwalletd-main.service")
     machine.wait_until_succeeds("systemctl is-active --quiet lightwalletd-main.service", timeout=60)
 
-    # Same hardening assertions as zebra: shared code means a regression in
-    # modules/hardening.nix would otherwise only be caught by whichever test
-    # happened to check it.
-    props = machine.succeed(
-        "systemctl show lightwalletd-main.service "
-        "-p DynamicUser -p ProtectSystem -p NoNewPrivileges -p MemoryDenyWriteExecute"
-    )
-    assert "DynamicUser=yes" in props, props
-    assert "ProtectSystem=strict" in props, props
-    assert "NoNewPrivileges=yes" in props, props
-    assert "MemoryDenyWriteExecute=yes" in props, props
+    with subtest("secrets reach the unit as credentials, and nowhere else"):
+        unit = machine.succeed("systemctl cat lightwalletd-main.service")
+        assert "rpcpassword" not in unit, unit
+        for line in unit.splitlines():
+            if "test-secrets" in line:
+                assert line.startswith("LoadCredential="), f"secret path outside LoadCredential: {line}"
+        owner, mode = machine.succeed(
+            "stat -c '%U %a' /run/credentials/lightwalletd-main.service/tls-key"
+        ).split()
+        assert owner != "root" and mode == "400", f"credential is {owner} {mode}, expected the service's user and 400"
+
+    with subtest("serves wallets over TLS with the configured certificate"):
+        out = machine.succeed(
+            "grpcurl -cacert ${certs.ca.cert} -import-path /etc/walletrpc -proto service.proto "
+            "${certs.domain}:9067 cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLightdInfo"
+        )
+        assert '"version"' in out, out
+        machine.fail("grpcurl -plaintext -import-path /etc/walletrpc -proto service.proto "
+                     "${certs.domain}:9067 cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLightdInfo")
 
     machine.succeed("test -d /var/lib/lightwalletd-main")
 

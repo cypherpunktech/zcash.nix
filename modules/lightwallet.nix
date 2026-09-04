@@ -4,13 +4,13 @@
 # original and lightwalletd-rs, and to a systemd unit they are one program:
 # flags rather than a config file, a gRPC listener that must stay on loopback
 # unless someone decides otherwise, an HTTP (metrics) listener, a backing
-# node's JSON-RPC reached by host/port or a zcash.conf, an on-disk block cache,
-# and TLS that must be either configured or refused in so many words. The
-# options are therefore defined once. What differs is spelling -- each
-# implementation names the same flag differently -- and one behaviour: the Go
-# one exits at startup without credentials, the Rust one does not. Both are
-# parameters, so a difference in the FORCES shows up here as data rather than
-# as a second module drifting from the first.
+# node's JSON-RPC reached by host/port with credentials from a zcash.conf, an
+# on-disk block cache, and TLS that must be either configured or refused in so
+# many words. The options are therefore defined once. What differs is
+# spelling -- each implementation names the same flag differently -- and one
+# behaviour: the Go one exits at startup without credentials, the Rust one
+# does not. Both are parameters, so a difference in the FORCES shows up here
+# as data rather than as a second module drifting from the first.
 #
 # Multi-instance: `services.zcash.lightwalletd.<instance>`, see ./service.nix.
 {
@@ -69,46 +69,18 @@ let
         description = "Port of the backing node's RPC.";
       };
 
-      zcashConfPath = lib.mkOption {
-        type = lib.types.nullOr lib.types.path;
-        default = null;
-        description = ''
-          Path to a `zcash.conf` to read RPC credentials from. **Preferred**
-          over the flags below, because everything in a unit's ExecStart is
-          readable by any local user through `systemctl cat` and `/proc`.
-        '';
-      };
-
-      rpcUser = lib.mkOption {
-        type = lib.types.nullOr lib.types.str;
-        default = null;
-        description = "RPC username. Requires `rpcPassword`. Prefer `zcashConfPath`.";
-      };
-
-      rpcPassword = lib.mkOption {
-        type = lib.types.nullOr lib.types.str;
-        default = null;
-        description = ''
-          RPC password, passed as a command-line flag.
-
-          This lands in the unit file and in the process's argv, both readable
-          by any local user. It exists because neither implementation offers a
-          password-from-file flag, and it is documented rather than hidden.
-          Use `zcashConfPath` unless you have a reason not to.
-        '';
-      };
+      # The only credential source. Both daemons also take the password as a
+      # flag; that option does not exist here because a flag lands in the
+      # unit file, which is in the world-readable store. A file handed over
+      # as a credential is the password-from-file flag both were missing.
+      zcashConfPath = service.secretFile ''
+        A `zcash.conf` with `rpcuser=` and `rpcpassword=` lines for the
+        backing node's RPC.
+      '';
 
       tls = {
-        certFile = lib.mkOption {
-          type = lib.types.nullOr lib.types.path;
-          default = null;
-          description = "TLS certificate. Required unless `insecureNoTLS` is set.";
-        };
-        keyFile = lib.mkOption {
-          type = lib.types.nullOr lib.types.path;
-          default = null;
-          description = "TLS key. Required unless `insecureNoTLS` is set.";
-        };
+        certFile = service.secretFile "TLS certificate. Required unless `insecureNoTLS` is set.";
+        keyFile = service.secretFile "TLS key. Required unless `insecureNoTLS` is set.";
       };
 
       insecureNoTLS = lib.mkOption {
@@ -141,39 +113,38 @@ in
   };
 
   config = lib.mkIf (instances != { }) {
-    assertions = lib.concatMap (instanceName: [
-      {
-        # Found by running the Go one: without a credential source it exits at
-        # once with "required file ./zcash.conf does not exist", which under
-        # systemd is a restart loop and a unit that looks configured.
-        assertion =
-          let
-            cfg = instances.${instanceName};
-          in
-          !requiresCredentials
-          || cfg.zcashConfPath != null
-          || (cfg.rpcUser != null && cfg.rpcPassword != null);
-        message = ''
-          services.zcash.${name}.${instanceName} needs RPC credentials: set
-          zcashConfPath (preferred), or both rpcUser and rpcPassword. ${name}
-          exits at startup without them, looking for ./zcash.conf in a working
-          directory it cannot write to.
-        '';
-      }
-      {
-        assertion =
-          let
-            cfg = instances.${instanceName};
-          in
-          cfg.insecureNoTLS || (cfg.tls.certFile != null && cfg.tls.keyFile != null);
-        message = ''
-          services.zcash.${name}.${instanceName} needs either tls.certFile and
-          tls.keyFile, or insecureNoTLS = true set deliberately. ${name} will
-          not start without one of them, and silently defaulting to no TLS
-          would hide a decision that belongs to you.
-        '';
-      }
-    ]) (lib.attrNames instances);
+    assertions = lib.concatMap (
+      instanceName:
+      let
+        cfg = instances.${instanceName};
+        opt = "services.zcash.${name}.${instanceName}";
+      in
+      [
+        {
+          # Found by running the Go one: without a credential source it exits
+          # at once with "required file ./zcash.conf does not exist", which
+          # under systemd is a restart loop and a unit that looks configured.
+          assertion = !requiresCredentials || cfg.zcashConfPath != null;
+          message = ''
+            ${opt} needs zcashConfPath: ${name} exits at startup without RPC
+            credentials, looking for ./zcash.conf in a working directory it
+            cannot write to.
+          '';
+        }
+        {
+          assertion = cfg.insecureNoTLS || (cfg.tls.certFile != null && cfg.tls.keyFile != null);
+          message = ''
+            ${opt} needs either tls.certFile and tls.keyFile, or insecureNoTLS
+            = true set deliberately. ${name} will not start without one of
+            them, and silently defaulting to no TLS would hide a decision that
+            belongs to you.
+          '';
+        }
+        (service.notInStore "${opt}.zcashConfPath" cfg.zcashConfPath)
+        (service.notInStore "${opt}.tls.certFile" cfg.tls.certFile)
+        (service.notInStore "${opt}.tls.keyFile" cfg.tls.keyFile)
+      ]
+    ) (lib.attrNames instances);
 
     systemd.services = lib.mapAttrs' (
       instanceName: cfg:
@@ -183,44 +154,44 @@ in
         wantedBy = [ "multi-user.target" ];
         after = [ "network-online.target" ];
         wants = [ "network-online.target" ];
-        serviceConfig = service.identity cfg "${name}-${instanceName}" // {
-          ExecStart = lib.escapeShellArgs (
-            [
-              (lib.getExe cfg.package)
-              flags.grpcBind
-              cfg.grpcBindAddr
-              flags.httpBind
-              cfg.httpBindAddr
-              flags.rpcHost
-              cfg.rpcHost
-              flags.rpcPort
-              (toString cfg.rpcPort)
-              "--data-dir"
-              "/var/lib/${name}-${instanceName}"
-            ]
-            ++ extraFlags
-            ++ lib.optionals (cfg.zcashConfPath != null) [
-              flags.zcashConf
-              (toString cfg.zcashConfPath)
-            ]
-            ++ lib.optionals (cfg.rpcUser != null) [
-              flags.rpcUser
-              cfg.rpcUser
-            ]
-            ++ lib.optionals (cfg.rpcPassword != null) [
-              flags.rpcPassword
-              cfg.rpcPassword
-            ]
-            ++ lib.optionals cfg.insecureNoTLS [ "--no-tls-very-insecure" ]
-            ++ lib.optionals (!cfg.insecureNoTLS) [
-              "--tls-cert"
-              (toString cfg.tls.certFile)
-              "--tls-key"
-              (toString cfg.tls.keyFile)
-            ]
-            ++ cfg.extraArgs
-          );
-        };
+        serviceConfig =
+          service.identity cfg "${name}-${instanceName}"
+          // service.credentials {
+            zcash-conf = cfg.zcashConfPath;
+            tls-cert = cfg.tls.certFile;
+            tls-key = cfg.tls.keyFile;
+          }
+          // {
+            # %d: the unit's credentials directory, expanded by systemd.
+            ExecStart = lib.escapeShellArgs (
+              [
+                (lib.getExe cfg.package)
+                flags.grpcBind
+                cfg.grpcBindAddr
+                flags.httpBind
+                cfg.httpBindAddr
+                flags.rpcHost
+                cfg.rpcHost
+                flags.rpcPort
+                (toString cfg.rpcPort)
+                "--data-dir"
+                "/var/lib/${name}-${instanceName}"
+              ]
+              ++ extraFlags
+              ++ lib.optionals (cfg.zcashConfPath != null) [
+                flags.zcashConf
+                "%d/zcash-conf"
+              ]
+              ++ lib.optionals cfg.insecureNoTLS [ "--no-tls-very-insecure" ]
+              ++ lib.optionals (!cfg.insecureNoTLS) [
+                "--tls-cert"
+                "%d/tls-cert"
+                "--tls-key"
+                "%d/tls-key"
+              ]
+              ++ cfg.extraArgs
+            );
+          };
       }
     ) instances;
 
