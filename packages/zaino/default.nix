@@ -42,6 +42,12 @@ rustPlatform.buildRustPackage {
     "zainod"
   ];
 
+  # `prometheus` is off in upstream's default feature set. Without it zainod
+  # accepts `metrics_endpoint` in its config and does nothing with it, so an
+  # operator who sets it gets no listener and no error. Compiled in: inert
+  # unless the key is set, and tests/stack.nix scrapes it.
+  buildFeatures = [ "prometheus" ];
+
   # zaino-state's build.rs also stamps the binary with whoami::username(), and
   # on darwin that is whichever _nixbld<N> the daemon hands the build. Two
   # builds got different users and produced different binaries; when N went

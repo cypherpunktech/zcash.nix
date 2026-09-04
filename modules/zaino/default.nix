@@ -59,9 +59,10 @@ let
           '';
           description = ''
             Contents of `zainod.toml`, as a Nix attribute set. Generate a
-            reference with `zainod generate-config -o -`.
+            reference with `zainod generate-config -o /dev/stdout`.
 
             `storage.database.path` defaults to the instance's state directory.
+            `metrics_endpoint = "127.0.0.1:9998"` serves Prometheus metrics.
           '';
         };
 

@@ -31,6 +31,7 @@ self: _: {
           # On, unlike the fixture's default: zaino reads the cookie through
           # `node` below, and the test reads it as root.
           rpc.enable_cookie_auth = true;
+          metrics.endpoint_addr = "127.0.0.1:9999";
           mining = {
             # Zebra's own documented Regtest address; the subsidy goes nowhere
             # anyone can spend, which is the point of a test chain.
@@ -46,6 +47,7 @@ self: _: {
         settings = {
           backend = "rpc";
           network = "Regtest";
+          metrics_endpoint = "127.0.0.1:9998";
           grpc_settings.listen_address = "127.0.0.1:8137";
           validator_settings = {
             validator_grpc_listen_address = "127.0.0.1:18230";
@@ -91,6 +93,17 @@ self: _: {
         "| jq -e '(.height | tonumber) > 0'",
         timeout=240,
     )
+
+    # Both daemons account for the chain on their metrics endpoints, in
+    # named series rather than an open port: a port proves a listener, not
+    # that the exporter is wired to the process. zebra's height gauge agrees
+    # with the RPC above; zaino's endpoint exists only because packages/zaino
+    # compiles the `prometheus` feature in, and carries its own series.
+    machine.wait_until_succeeds(
+        "curl -sf http://127.0.0.1:9999/metrics | awk '/^zcash_chain_verified_block_height/ { exit !($NF > 0) }'",
+        timeout=60,
+    )
+    machine.wait_until_succeeds("curl -sf http://127.0.0.1:9998/metrics | grep -q '^zaino_'")
 
     # zaino started once. Ordered after a node whose "started" means "RPC
     # answers", it never ran against a node that was not there. Without that

@@ -69,6 +69,7 @@ let
             {
               network.network = "Testnet";
               rpc.listen_addr = "127.0.0.1:18232";
+              metrics.endpoint_addr = "127.0.0.1:9999"; # Prometheus, on loopback
             }
           '';
           description = ''

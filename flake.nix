@@ -23,8 +23,8 @@
   # keeps it. Nix still asks before trusting a flake's nixConfig unless the user
   # is a trusted-user, which is the correct place for that decision to sit.
   #
-  # CI fills it for all three systems (discover.yml decides the runners);
-  # `just push-cache <pkg>` lets a maintainer publish a build ahead of CI.
+  # CI fills it for all three systems (discover.yml decides the runners) and
+  # is its only writer: a laptop push would be a second, unreviewed signer.
   nixConfig = {
     extra-substituters = [ "https://cypherpunktech.cachix.org" ];
     extra-trusted-public-keys = [
@@ -258,8 +258,16 @@
       # Each module is a function of `self` so it can default its `package`
       # option to this flake's build. That keeps `services.zcash.zebra.enable =
       # true` working with no overlay and no second place to state which
-      # package a service runs.
-      modules = lib.genAttrs moduleNames (name: import (./modules + "/${name}") self);
+      # package a service runs. The module system records a declaring file
+      # only for path imports; a module imported as a value here would have
+      # every option and error attributed to flake.nix, so each is told its
+      # own file.
+      modules = lib.genAttrs moduleNames (
+        name:
+        lib.setDefaultModuleLocation "${self}/modules/${name}/default.nix" (
+          import (./modules + "/${name}") self
+        )
+      );
 
       treefmtFor =
         pkgs:
@@ -273,6 +281,10 @@
           programs.taplo.enable = true;
           programs.shfmt.enable = true;
           programs.shfmt.indent_size = 0; # tabs, shfmt's default and shellcheck's
+          # shfmt formats; shellcheck finds the `$?`-after-a-pipe class of bug
+          # in the scripts CI runs. .envrc is direnv's, not bash.
+          programs.shellcheck.enable = true;
+          settings.formatter.shellcheck.excludes = [ ".envrc" ];
         };
     in
     {
@@ -294,18 +306,17 @@
       images = eachSystem (pkgs: lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (imagesFor pkgs));
 
       # A NixOS VM test boots a machine and asserts the service runs, which is
-      # the only check that covers the unit rather than the binary. They exist
-      # only on Linux: nixosTest needs a Linux builder, so on darwin these are
-      # absent rather than failing, and CI is where they actually run.
+      # the only check that covers the unit rather than the binary. The guest
+      # is always Linux; the host need not be. nixpkgs pairs an aarch64-darwin
+      # host with an aarch64-linux guest under HVF and asks only for a Linux
+      # remote builder for the guest's closure (nix-darwin's
+      # `nix.linux-builder`), so the tests exist wherever a package set does.
+      # `checks` below keeps them to Linux hosts, so `nix flake check` on a
+      # Mac needs no builder; `nix run .#nixosTests.<system>.<t>.driverInteractive`
+      # is the local loop. CI runs them on x86_64-linux with KVM.
       nixosTests = eachSystem (
         pkgs:
-        # isLinux is necessary but not sufficient: a VM test instantiates the
-        # module, which resolves its package from packages.<system>, so a
-        # system that claims no packages can produce no tests. aarch64-linux is
-        # exactly that case today. Deriving the condition from the package set
-        # rather than hardcoding a system means this corrects itself the moment
-        # a package is proven on a new Linux target.
-        lib.optionalAttrs (pkgs.stdenv.hostPlatform.isLinux && availableFor pkgs != { }) (
+        lib.optionalAttrs (availableFor pkgs != { }) (
           lib.mapAttrs' (
             file: _:
             let
@@ -331,7 +342,9 @@
       checks = eachSystem (
         pkgs:
         smokeChecks pkgs
-        // lib.mapAttrs' (n: lib.nameValuePair "vm-${n}") self.nixosTests.${pkgs.stdenv.hostPlatform.system}
+        // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux (
+          lib.mapAttrs' (n: lib.nameValuePair "vm-${n}") self.nixosTests.${pkgs.stdenv.hostPlatform.system}
+        )
         // {
           formatting = (treefmtFor pkgs).config.build.check self;
 
@@ -341,8 +354,11 @@
           # under `nix flake check --no-build` on every system, including a
           # Mac, before the VM test ever boots it. AGENTS.md's manual
           # "evaluate a real system" advice, as a gate.
+          # The context is discarded because forcing the path is the whole
+          # check; keeping it would make this derivation depend on BUILDING
+          # that system, which is the VM test's job.
           eval-units = pkgs.runCommandLocal "eval-units" {
-            drv = self.nixosTests.x86_64-linux.units.nodes.machine.system.build.toplevel.drvPath;
+            drv = builtins.unsafeDiscardStringContext self.nixosTests.x86_64-linux.units.nodes.machine.system.build.toplevel.drvPath;
           } "echo $drv > $out";
         }
       );
