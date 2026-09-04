@@ -8,7 +8,7 @@
 _self:
 { pkgs, ... }:
 let
-  certs = import "${pkgs.path}/nixos/tests/common/acme/server/snakeoil-certs.nix";
+  certs = import (pkgs.path + "/nixos/tests/common/acme/server/snakeoil-certs.nix");
 in
 {
   name = "zcash-lightwalletd-rs";
@@ -46,8 +46,7 @@ in
 
     with subtest("serves TLS with the configured certificate"):
         out = machine.succeed(
-            "openssl s_client -connect ${certs.domain}:9067 -servername ${certs.domain} "
-            "-CAfile ${certs.ca.cert} </dev/null 2>&1"
+            "openssl s_client -connect ${certs.domain}:9067 -servername ${certs.domain} </dev/null 2>&1"
         )
         assert "Verify return code: 0 (ok)" in out, out
 

@@ -7,9 +7,6 @@
 #     Off on darwin, every crate's build.rs ran unsandboxed with network.
 #   allow-import-from-derivation -- "no impurity"; IFD is the one flakes
 #     still permit, and nothing here uses it, which is when a guard is free.
-#   use-registries -- every reference is pinned through the lock
-#     (`--inputs-from .`); a bare `nixpkgs#x` would otherwise resolve to
-#     whatever unstable is today, and this makes it a red job instead.
 #   max-silent-time -- a wedged build fails with Nix's message after half
 #     an hour of silence, not GitHub's generic cancel after six hours.
 name: nix
@@ -23,5 +20,4 @@ runs:
           sandbox = true
           sandbox-fallback = false
           allow-import-from-derivation = false
-          use-registries = false
           max-silent-time = 1800

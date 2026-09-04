@@ -14,7 +14,7 @@
 self:
 { pkgs, ... }:
 let
-  certs = import "${pkgs.path}/nixos/tests/common/acme/server/snakeoil-certs.nix";
+  certs = import (pkgs.path + "/nixos/tests/common/acme/server/snakeoil-certs.nix");
 in
 {
   name = "zcash-lightwalletd-remote";
@@ -49,8 +49,10 @@ in
     client =
       { nodes, pkgs, ... }:
       {
-        # The certificate names acme.test; to this machine that is the wallet host.
+        # The certificate names acme.test; to this machine that is the wallet
+        # host, and its CA is trusted the way a wallet's OS would trust one.
         networking.extraHosts = "${nodes.wallet.networking.primaryIPAddress} ${certs.domain}";
+        security.pki.certificates = [ (builtins.readFile certs.ca.cert) ];
         environment.systemPackages = [ pkgs.grpcurl ];
         environment.etc."walletrpc".source = "${
           self.packages.${pkgs.stdenv.hostPlatform.system}.lightwalletd.src
@@ -66,7 +68,7 @@ in
 
     with subtest("a wallet reaches lightwalletd over TLS, and it reached the node"):
         out = client.wait_until_succeeds(
-            "grpcurl -cacert ${certs.ca.cert} -import-path /etc/walletrpc -proto service.proto "
+            "grpcurl -import-path /etc/walletrpc -proto service.proto "
             "${certs.domain}:9067 cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLightdInfo",
             timeout=120,
         )

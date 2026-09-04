@@ -12,20 +12,27 @@
 #
 # This directory holds fixtures, not tests: flake.nix turns every tests/*.nix
 # into a VM test, and a subdirectory is what its filter skips.
+#
+# `pkgs.path + "/..."` and readFile, never `"${pkgs.path}/..."` or a
+# certificate's path as a string: coercing a path from inside nixpkgs to a
+# string copies it into the store -- for pkgs.path, all of nixpkgs -- and
+# CI's evaluation refuses that under --no-build.
 { pkgs, ... }:
 let
-  certs = import "${pkgs.path}/nixos/tests/common/acme/server/snakeoil-certs.nix";
+  certs = import (pkgs.path + "/nixos/tests/common/acme/server/snakeoil-certs.nix");
+  file = name: path: pkgs.writeText name (builtins.readFile path);
 in
 {
   system.activationScripts.testSecrets.text = ''
-    install -Dm600 ${certs.${certs.domain}.key} /var/lib/test-secrets/tls.key
-    install -Dm644 ${certs.${certs.domain}.cert} /var/lib/test-secrets/tls.crt
+    install -Dm600 ${file "tls.key" certs.${certs.domain}.key} /var/lib/test-secrets/tls.key
+    install -Dm644 ${file "tls.crt" certs.${certs.domain}.cert} /var/lib/test-secrets/tls.crt
     install -Dm600 /dev/null /var/lib/test-secrets/zcash.conf
     printf 'rpcuser=test\nrpcpassword=test\n' > /var/lib/test-secrets/zcash.conf
   '';
 
   # The certificate names acme.test; that is this machine, and its CA is one
-  # the machine trusts, so a client here verifies the way a wallet would.
+  # the machine trusts, so a client here verifies the way a wallet would:
+  # grpcurl and openssl read the system trust store by default.
   networking.extraHosts = "127.0.0.1 ${certs.domain}";
-  security.pki.certificateFiles = [ certs.ca.cert ];
+  security.pki.certificates = [ (builtins.readFile certs.ca.cert) ];
 }

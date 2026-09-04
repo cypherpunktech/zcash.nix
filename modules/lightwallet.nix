@@ -20,8 +20,13 @@
   documentation,
   # The implementation's spelling of each flag this module sets.
   flags,
-  # Flags always passed, e.g. to redirect a log file into journald.
-  extraFlags ? [ ],
+  # The daemon logs only to a file named by this flag (null: it logs to
+  # stderr like a daemon should). Under systemd stdout is journald's stream
+  # SOCKET, and open(2) on a socket is ENXIO, so `--log-file /dev/stdout`
+  # dies at every start -- and looks "active" for the second before it does.
+  # A pipe reopens fine: the daemon's stdout becomes one, cat forwards it to
+  # the journal, and pipefail keeps the daemon's exit status for Restart=.
+  logFileFlag ? null,
   # Whether the daemon refuses to start with no credential source at all.
   requiresCredentials,
 }:
@@ -164,35 +169,49 @@ in
             tls-key = cfg.tls.keyFile;
           }
           // {
-            # %d: the unit's credentials directory, expanded by systemd.
-            ExecStart = lib.escapeShellArgs (
-              [
-                (lib.getExe cfg.package)
-                flags.grpcBind
-                cfg.grpcBindAddr
-                flags.httpBind
-                cfg.httpBindAddr
-                flags.rpcHost
-                cfg.rpcHost
-                flags.rpcPort
-                (toString cfg.rpcPort)
-                "--data-dir"
-                "/var/lib/${name}-${instanceName}"
-              ]
-              ++ extraFlags
-              ++ lib.optionals (cfg.zcashConfPath != null) [
-                flags.zcashConf
-                "%d/zcash-conf"
-              ]
-              ++ lib.optionals cfg.insecureNoTLS [ "--no-tls-very-insecure" ]
-              ++ lib.optionals (!cfg.insecureNoTLS) [
-                "--tls-cert"
-                "%d/tls-cert"
-                "--tls-key"
-                "%d/tls-key"
-              ]
-              ++ cfg.extraArgs
-            );
+            ExecStart =
+              let
+                # %d: the unit's credentials directory, expanded by systemd.
+                argv = lib.escapeShellArgs (
+                  [
+                    (lib.getExe cfg.package)
+                    flags.grpcBind
+                    cfg.grpcBindAddr
+                    flags.httpBind
+                    cfg.httpBindAddr
+                    flags.rpcHost
+                    cfg.rpcHost
+                    flags.rpcPort
+                    (toString cfg.rpcPort)
+                    "--data-dir"
+                    "/var/lib/${name}-${instanceName}"
+                  ]
+                  ++ lib.optionals (logFileFlag != null) [
+                    logFileFlag
+                    "/dev/stdout"
+                  ]
+                  ++ lib.optionals (cfg.zcashConfPath != null) [
+                    flags.zcashConf
+                    "%d/zcash-conf"
+                  ]
+                  ++ lib.optionals cfg.insecureNoTLS [ "--no-tls-very-insecure" ]
+                  ++ lib.optionals (!cfg.insecureNoTLS) [
+                    "--tls-cert"
+                    "%d/tls-cert"
+                    "--tls-key"
+                    "%d/tls-key"
+                  ]
+                  ++ cfg.extraArgs
+                );
+              in
+              if logFileFlag == null then
+                argv
+              else
+                lib.escapeShellArgs [
+                  pkgs.runtimeShell
+                  "-c"
+                  "set -o pipefail; ${argv} | cat"
+                ];
           };
       }
     ) instances;

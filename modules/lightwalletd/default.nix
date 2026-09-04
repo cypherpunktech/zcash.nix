@@ -1,8 +1,9 @@
 # services.zcash.lightwalletd — the Go lightwalletd, as a systemd service.
 #
 # Shares ../lightwallet.nix with lightwalletd-rs. The Go flag spellings, the
-# log redirect (its default is ./server.log, which ProtectSystem=strict makes
-# unwritable; journald is where a service's logs belong), and the fact that it
+# fact that it logs only to a file (its default is ./server.log, which
+# ProtectSystem=strict makes unwritable; journald is where a service's logs
+# belong, and lightwallet.nix says how it gets there), and the fact that it
 # refuses to start without credentials are what is specific to it.
 self:
 import ../lightwallet.nix {
@@ -17,9 +18,6 @@ import ../lightwallet.nix {
     rpcPort = "--rpcport";
     zcashConf = "--zcash-conf-path";
   };
-  extraFlags = [
-    "--log-file"
-    "/dev/stdout"
-  ];
+  logFileFlag = "--log-file";
   requiresCredentials = true;
 }

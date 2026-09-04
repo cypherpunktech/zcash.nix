@@ -9,7 +9,7 @@
 self:
 { pkgs, ... }:
 let
-  certs = import "${pkgs.path}/nixos/tests/common/acme/server/snakeoil-certs.nix";
+  certs = import (pkgs.path + "/nixos/tests/common/acme/server/snakeoil-certs.nix");
 in
 {
   name = "zcash-lightwalletd";
@@ -57,7 +57,7 @@ in
 
     with subtest("serves wallets over TLS with the configured certificate"):
         out = machine.succeed(
-            "grpcurl -cacert ${certs.ca.cert} -import-path /etc/walletrpc -proto service.proto "
+            "grpcurl -import-path /etc/walletrpc -proto service.proto "
             "${certs.domain}:9067 cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLightdInfo"
         )
         assert '"version"' in out, out
