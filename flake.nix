@@ -139,6 +139,34 @@
       redistributable =
         pkg: pkg.meta ? license && lib.all (l: l.redistributable or false) (lib.toList pkg.meta.license);
 
+      # The contract a package signs by existing, checked where the package
+      # is made: no evaluation of this flake can see a package that breaks it,
+      # so `nix flake check`, discover.yml and every script trip on the same
+      # throw instead of each discovering a missing field at run time.
+      # CONTRIBUTING.md lists these fields; this is the copy that cannot drift
+      # from what is enforced. Platforms are the sharpest: a claim outside
+      # `systems` is a platform no runner will ever prove (AGENTS.md).
+      contract =
+        name: pkg:
+        let
+          need = what: ok: lib.throwIfNot ok "packages/${name}: ${what}";
+        in
+        need "meta.description must be non-empty" (pkg.meta.description or "" != "") (
+          need "meta.homepage" (pkg.meta ? homepage) (
+            need "meta.license" (pkg.meta ? license) (
+              need "meta.mainProgram: lib.getExe and nix run depend on it" (pkg.meta ? mainProgram) (
+                need "passthru.smokeArgs: how does this binary prove it runs?" (pkg ? smokeArgs) (
+                  need "src.rev: check-staleness.sh and verify-upstream.sh read it" (pkg.src ? rev) (
+                    need "meta.platforms must be a subset of ${toString systems}" (lib.all (p: lib.elem p systems) (
+                      pkg.meta.platforms or [ ]
+                    )) pkg
+                  )
+                )
+              )
+            )
+          )
+        );
+
       # A package IS a directory under packages/. Adding one is adding a
       # directory — there is no list in this file to forget to edit. The
       # overlay and the packages output are this one function applied to
@@ -150,18 +178,20 @@
           let
             package = import (./packages + "/${name}");
           in
-          # callPackage passes explicit arguments unconditionally, and a Go
-          # package that never asked for rustPlatform would reject it.
-          (pkgs.callPackage package (
-            lib.optionalAttrs (lib.functionArgs package ? rustPlatform) {
-              rustPlatform = reproducibleRustPlatform pkgs;
-            }
-          )).overrideAttrs
-            (o: {
-              passthru = (o.passthru or { }) // {
-                redistributable = redistributable o;
-              };
-            })
+          contract name (
+            # callPackage passes explicit arguments unconditionally, and a Go
+            # package that never asked for rustPlatform would reject it.
+            (pkgs.callPackage package (
+              lib.optionalAttrs (lib.functionArgs package ? rustPlatform) {
+                rustPlatform = reproducibleRustPlatform pkgs;
+              }
+            )).overrideAttrs
+              (o: {
+                passthru = (o.passthru or { }) // {
+                  redistributable = redistributable o;
+                };
+              })
+          )
         );
 
       # `nix flake check --all-systems` forces every package's drvPath, and
@@ -229,23 +259,88 @@
       # breakage; eval and even a green `nix build` both miss it (the lesson
       # from ~/nix/checks/default.nix). Each package states its own proof via
       # passthru.smokeArgs, so "how do I know this works" lives next to the
-      # thing it is claimed about — and a package that answers nothing fails
-      # loudly at eval rather than being silently unproven.
+      # thing it is claimed about (`contract` refuses a package without one).
+      #
+      # The same derivation makes the second claim about what ships: nothing
+      # in the runtime closure is a compiler, linker or protobuf. A bindgen
+      # hook that wrote LIBCLANG_PATH into a binary, or a baked PROTOC path,
+      # turns a 90 MB image into a 2 GB one and is invisible to every other
+      # gate. gcc's runtime library is the one legitimate hit: Rust links it.
       smokeChecks =
         pkgs:
         lib.mapAttrs' (
           name: pkg:
           lib.nameValuePair "smoke-${name}" (
-            pkgs.runCommandLocal "smoke-${name}" { } ''
-              ${lib.getExe pkg} ${
-                lib.escapeShellArgs (
-                  pkg.smokeArgs
-                    or (throw "packages/${name} must set passthru.smokeArgs: how does this binary prove it runs?")
-                )
-              } | tee $out
+            pkgs.runCommandLocal "smoke-${name}" { closure = pkgs.closureInfo { rootPaths = [ pkg ]; }; } ''
+              ${lib.getExe pkg} ${lib.escapeShellArgs pkg.smokeArgs} | tee $out
+              if sed 's|^/nix/store/[a-z0-9]*-||' "$closure/store-paths" \
+                | grep -E '^(rustc|cargo|go|clang|llvm|protobuf|binutils|gcc)-[0-9]' \
+                | grep -vE '^gcc-[0-9.]+-lib(gcc)?$'; then
+                echo "packages/${name}: build tools in the runtime closure (above)" >&2
+                exit 1
+              fi
             ''
           )
         ) (availableFor pkgs);
+
+      # The scripts behind the trust gates (trust.yml, stale.yml, `just`),
+      # packaged with the tools they call. Two things this buys over a bare
+      # `bash scripts/x.sh`: the tools are the lock's, not the runner image's
+      # -- verify-upstream.sh's git and ssh-keygen ARE the security property
+      # -- and writeShellApplication runs shellcheck at build time. `nix` is
+      # deliberately not among them: the one on PATH is the daemon's. The
+      # files stay files: readable, greppable, runnable by hand.
+      commands =
+        pkgs:
+        lib.mapAttrs
+          (
+            name:
+            {
+              file,
+              tools,
+              description,
+            }:
+            pkgs.writeShellApplication {
+              inherit name;
+              runtimeInputs = tools;
+              text = builtins.readFile (./scripts + "/${file}");
+              meta = { inherit description; };
+            }
+          )
+          {
+            audit = {
+              file = "check-advisories.sh";
+              tools = with pkgs; [
+                cargo-audit
+                govulncheck
+                jq
+              ];
+              description = "cargo-audit and govulncheck over the lockfile each package vendors";
+            };
+            verify = {
+              file = "verify-upstream.sh";
+              tools = with pkgs; [
+                git
+                openssh
+                gnutar
+                jq
+              ];
+              description = "where upstream signs its tags, the pinned source is what the maintainer signed";
+            };
+            stale = {
+              file = "check-staleness.sh";
+              tools = with pkgs; [
+                gh
+                jq
+              ];
+              description = "every package is close to upstream's latest release";
+            };
+            fods = {
+              file = "check-fods.sh";
+              tools = with pkgs; [ jq ];
+              description = "every hash typed into packages/ still re-fetches to the bytes it names";
+            };
+          };
 
       # Modules follow the same rule as packages: a module IS a directory under
       # modules/, so adding one is adding a directory. hardening.nix sits
@@ -364,6 +459,17 @@
       );
 
       formatter = eachSystem (pkgs: (treefmtFor pkgs).config.build.wrapper);
+
+      # `nix run .#audit|verify|stale|fods`; `nix flake show` lists them with
+      # what each claims.
+      apps = eachSystem (
+        pkgs:
+        lib.mapAttrs (_: drv: {
+          type = "app";
+          program = lib.getExe drv;
+          meta = { inherit (drv.meta) description; };
+        }) (commands pkgs)
+      );
 
       devShells = eachSystem (
         pkgs:

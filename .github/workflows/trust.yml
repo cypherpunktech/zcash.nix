@@ -20,8 +20,9 @@
 #
 # All three are scripts, not derivations: each needs the network -- an
 # advisory database, a git remote, upstream's tarballs -- and each can be
-# rerun by anyone in a minute: `just audit`, `just verify`, `just fods`.
-# Daily, cheap: sources and one cached binary.
+# rerun by anyone in a minute: `just audit`, `just verify`, `just fods`. They
+# run as flake apps so the tools they call are the lock's. Daily, cheap:
+# sources and one cached binary.
 name: trust
 
 permissions:
@@ -56,9 +57,9 @@ jobs:
           name: cypherpunktech
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
           skipPush: true
-      # The auditors come from the flake's own pinned nixpkgs, not a registry
-      # lookup, so a run is reproducible against the lockfile.
-      - run: nix shell --inputs-from . nixpkgs#cargo-audit nixpkgs#govulncheck -c ./scripts/check-advisories.sh
+      # The auditors come from the flake's own pinned nixpkgs (flake.nix
+      # `commands`), so a run is reproducible against the lockfile.
+      - run: nix run .#audit
 
   provenance:
     runs-on: ubuntu-latest
@@ -68,7 +69,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/nix
-      - run: ./scripts/verify-upstream.sh
+      # git and ssh-keygen are the security property here; they come from
+      # the lock, not the runner image.
+      - run: nix run .#verify
 
   sources:
     runs-on: ubuntu-latest
@@ -86,6 +89,6 @@ jobs:
           name: cypherpunktech
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
           skipPush: true
-      - run: ./scripts/check-fods.sh
+      - run: nix run .#fods
         env:
           SYSTEM: x86_64-linux

@@ -41,17 +41,11 @@ eval_attr() {
 	nix eval --raw ".#packages.${SYSTEM}.$1.$2"
 }
 
-packages=$(nix eval --json ".#packages.${SYSTEM}" --apply builtins.attrNames | tr -d '[]"' | tr ',' ' ')
+packages=$(nix eval --json ".#packages.${SYSTEM}" --apply builtins.attrNames | jq -r '.[]')
 
 for pkg in $packages; do
-	# A package with no src cannot be checked at all, and the raw nix error for
-	# a missing attribute does not say which package or why. Name it: an
-	# unwatchable package is a hole in this gate, and a hole has to be loud.
-	if ! rev=$(eval_attr "$pkg" src.rev 2>/dev/null); then
-		echo "UNCHECKABLE  $pkg has no src.rev; every package must expose the source it was built from" >&2
-		stale+=("$pkg (no src.rev — cannot be checked)")
-		continue
-	fi
+	# src.rev exists: flake.nix's `contract` refuses a package without one.
+	rev=$(eval_attr "$pkg" src.rev)
 	repo=$(eval_attr "$pkg" src.gitRepoUrl | sed -E 's#^https://github\.com/(.+)\.git$#\1#')
 
 	case "$rev" in

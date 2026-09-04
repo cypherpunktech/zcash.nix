@@ -33,13 +33,17 @@ build PKG: stage
 update PKG: stage
     nix-update --flake --version=stable {{ PKG }}
 
-# The three trust gates (.github/workflows/trust.yml), runnable here in a
-# minute. Auditors come from the flake's pinned nixpkgs so local and CI agree.
+# The trust gates (trust.yml, stale.yml), runnable here in a minute. Each is
+# a flake app carrying its own tools (flake.nix `commands`), so local and CI
+# run the same script with the same binaries.
 audit: stage
-    nix shell --inputs-from . nixpkgs#cargo-audit nixpkgs#govulncheck -c ./scripts/check-advisories.sh
+    nix run .#audit
 
 verify: stage
-    ./scripts/verify-upstream.sh
+    nix run .#verify
 
 fods: stage
-    ./scripts/check-fods.sh
+    nix run .#fods
+
+stale: stage
+    nix run .#stale

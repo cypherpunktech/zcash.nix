@@ -30,7 +30,7 @@ eval_attr() {
 	nix eval --raw ".#packages.${SYSTEM}.$1.$2"
 }
 
-packages=$(nix eval --json ".#packages.${SYSTEM}" --apply builtins.attrNames | tr -d '[]"' | tr ',' ' ')
+packages=$(nix eval --json ".#packages.${SYSTEM}" --apply builtins.attrNames | jq -r '.[]')
 failed=()
 unsigned=()
 work=$(mktemp -d)

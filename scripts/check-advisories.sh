@@ -24,7 +24,7 @@ set -euo pipefail
 
 SYSTEM="${SYSTEM:-$(nix config show system)}"
 
-packages=$(nix eval --json ".#packages.${SYSTEM}" --apply builtins.attrNames | tr -d '[]"' | tr ',' ' ')
+packages=$(nix eval --json ".#packages.${SYSTEM}" --apply builtins.attrNames | jq -r '.[]')
 failed=()
 
 for pkg in ${PACKAGES:-$packages}; do

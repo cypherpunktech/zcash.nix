@@ -115,7 +115,7 @@ jobs:
         env:
           PACKAGES: ${{ matrix.package }}
           SYSTEM: x86_64-linux
-        run: ./scripts/verify-upstream.sh
+        run: nix run .#verify
 
       # A bump that builds but produces a binary that cannot start is exactly
       # the breakage a version PR should catch, so the smoke check gates the PR
