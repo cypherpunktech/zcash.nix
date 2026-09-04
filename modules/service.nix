@@ -137,4 +137,17 @@ rec {
   enabled = instances: lib.filterAttrs (_: cfg: cfg.enable) instances;
 
   portOf = addr: lib.toInt (lib.last (lib.splitString ":" addr));
+  # "127.0.0.1:8232" -> "127.0.0.1"; "[::1]:8232" -> "::1".
+  hostOf =
+    addr:
+    lib.removePrefix "[" (
+      lib.removeSuffix "]" (lib.concatStringsSep ":" (lib.init (lib.splitString ":" addr)))
+    );
+  loopback =
+    addr:
+    lib.any (p: lib.hasPrefix p (hostOf addr)) [
+      "127."
+      "::1"
+      "localhost"
+    ];
 }

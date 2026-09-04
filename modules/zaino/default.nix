@@ -27,12 +27,27 @@ let
   toml = pkgs.formats.toml { };
 
   instance =
-    { name, ... }:
+    { name, config, ... }:
     let
       stateDir = "/var/lib/zaino-${name}";
+      unit = "zaino-${name}";
     in
     {
       options = service.options // {
+        node = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+          example = "zebra-mainnet";
+          description = ''
+            Unit name of the zebra or zakura instance on this host that this
+            indexer follows, `<node>-<instance>`. This unit then starts after
+            the node's RPC answers, restarts when the node does, and
+            authenticates to its RPC with the node's cookie, which systemd
+            hands over as a credential so the two keep separate users. The
+            node's addresses still come from `settings.validator_settings`.
+          '';
+        };
+
         settings = lib.mkOption {
           inherit (toml) type;
           default = { };
@@ -63,8 +78,16 @@ let
         };
       };
 
-      # Its own default is a home-directory cache, which ProtectHome hides.
-      config.settings.storage.database.path = lib.mkDefault stateDir;
+      config.settings = {
+        # Its own default is a home-directory cache, which ProtectHome hides.
+        storage.database.path = lib.mkDefault stateDir;
+        # The node rewrites its cookie on every start; the credential is a
+        # copy taken at this unit's start, and partOf below keeps the two in
+        # step.
+        validator_settings.validator_cookie_path = lib.mkIf (config.node != null) (
+          service.credentialPath unit "validator-cookie"
+        );
+      };
     };
 in
 {
@@ -81,19 +104,25 @@ in
         description = "Zaino Zcash indexer (${instanceName})";
         documentation = [ "https://github.com/zingolabs/zaino" ];
         wantedBy = [ "multi-user.target" ];
-        after = [ "network-online.target" ];
-        wants = [ "network-online.target" ];
-        serviceConfig = service.identity cfg "zaino-${instanceName}" // {
-          ExecStart = lib.escapeShellArgs (
-            [
-              (lib.getExe cfg.package)
-              "start"
-              "--config"
-              (toml.generate "zainod-${instanceName}.toml" cfg.settings)
-            ]
-            ++ cfg.extraArgs
-          );
-        };
+        after = [ "network-online.target" ] ++ lib.optional (cfg.node != null) "${cfg.node}.service";
+        wants = [ "network-online.target" ] ++ lib.optional (cfg.node != null) "${cfg.node}.service";
+        partOf = lib.optional (cfg.node != null) "${cfg.node}.service";
+        serviceConfig =
+          service.identity cfg "zaino-${instanceName}"
+          // service.credentials {
+            validator-cookie = lib.mapNullable (node: "/var/lib/${node}/.cookie") cfg.node;
+          }
+          // {
+            ExecStart = lib.escapeShellArgs (
+              [
+                (lib.getExe cfg.package)
+                "start"
+                "--config"
+                (toml.generate "zainod-${instanceName}.toml" cfg.settings)
+              ]
+              ++ cfg.extraArgs
+            );
+          };
       }
     ) instances;
 

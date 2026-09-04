@@ -37,10 +37,11 @@ self:
             testnet_parameters.activation_heights.NU5 = 1;
           };
           state.ephemeral = true;
+          # Cookie auth stays ON, as it would in production: zaino reads the
+          # cookie through `node` below, and the test reads it as root.
           rpc = {
             listen_addr = "127.0.0.1:18232";
             indexer_listen_addr = "127.0.0.1:18230";
-            enable_cookie_auth = false;
           };
           mining = {
             # Zebra's own documented Regtest address; the subsidy goes nowhere
@@ -53,6 +54,7 @@ self:
 
       services.zcash.zaino.regtest = {
         enable = true;
+        node = "zebra-regtest";
         settings = {
           backend = "rpc";
           network = "Regtest";
@@ -82,9 +84,10 @@ self:
     machine.wait_for_open_port(18232)
     machine.wait_for_open_port(18230)
 
-    # The chain grows on its own.
+    # The chain grows on its own. The cookie is `user:password` on one line,
+    # which is what curl -u takes.
     machine.wait_until_succeeds(
-        "curl -s -H 'Content-Type: application/json' "
+        "curl -s -u \"$(cat /var/lib/zebra-regtest/.cookie)\" -H 'Content-Type: application/json' "
         "--data '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getblockchaininfo\",\"params\":[]}' "
         "http://127.0.0.1:18232 | jq -e '.result.blocks > 0'",
         timeout=180,
@@ -101,5 +104,12 @@ self:
         "| jq -e '(.height | tonumber) > 0'",
         timeout=240,
     )
+
+    # zaino started once. Ordered after a node whose "started" means "RPC
+    # answers", it never ran against a node that was not there. Without that
+    # ordering it crash-looped until zebra bound RPC, wait_for_unit passed
+    # after any number of restarts, and this test could not tell.
+    restarts = machine.succeed("systemctl show -p NRestarts --value zaino-regtest.service").strip()
+    assert restarts == "0", f"zaino-regtest restarted {restarts} times before zebra was ready"
   '';
 }

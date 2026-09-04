@@ -118,6 +118,16 @@ in
   };
 
   config = lib.mkIf (instances != { }) {
+    assertions = lib.mapAttrsToList (instanceName: cfg: {
+      # The cookie is the RPC's only authentication. Off on loopback is a
+      # local trust decision; off on an address the network can reach is a
+      # node anyone who finds the port can drive.
+      assertion =
+        (cfg.settings.rpc.enable_cookie_auth or true)
+        || service.loopback (cfg.settings.rpc.listen_addr or "127.0.0.1:0");
+      message = "services.zcash.${name}.${instanceName}: rpc.enable_cookie_auth = false with rpc.listen_addr ${cfg.settings.rpc.listen_addr} is an unauthenticated RPC on the network.";
+    }) instances;
+
     systemd.services = lib.mapAttrs' (
       instanceName: cfg:
       lib.nameValuePair "${name}-${instanceName}" {
@@ -130,6 +140,21 @@ in
           service.identity cfg "${name}-${instanceName}"
           // lib.optionalAttrs (addressFamilies != [ ]) {
             RestrictAddressFamilies = hardening.RestrictAddressFamilies ++ addressFamilies;
+          }
+          # Where RPC is configured, "started" means "RPC answers", not
+          # "process forked": systemd does not complete this unit's start job,
+          # and so does not release anything ordered After= it, until
+          # ExecStartPost exits. An indexer that follows this node would
+          # otherwise race a daemon that binds RPC only after opening its
+          # state and writing its cookie. Bounded by TimeoutStartSec, which is
+          # sized for a state-format migration on mainnet; on a host with no
+          # DNS zebrad never binds RPC (tests/zebra.nix) and the unit sits in
+          # "activating (start-post)" until then, which is the truthful state.
+          // lib.optionalAttrs (cfg.settings.rpc ? listen_addr) {
+            ExecStartPost = pkgs.writeShellScript "${name}-${instanceName}-rpc-ready" ''
+              until (exec 3<>/dev/tcp/${service.hostOf cfg.settings.rpc.listen_addr}/${toString (service.portOf cfg.settings.rpc.listen_addr)}) 2>/dev/null; do sleep 1; done
+            '';
+            TimeoutStartSec = "15min";
           }
           # Zebra's internal miner lowers its solver thread's priority (the
           # thread-priority crate: pthread_setschedparam, then setpriority for
