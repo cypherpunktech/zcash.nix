@@ -169,49 +169,62 @@ in
             tls-key = cfg.tls.keyFile;
           }
           // {
+            # The credentials file is what the daemon reads its RPC user and
+            # password from, but the Go daemon takes the whole connection from
+            # that file once it has one -- rpcbind and rpcport included, with
+            # defaults of 127.0.0.1:8232 -- and ignores its own host and port
+            # flags. So the file the daemon sees is composed here, at start,
+            # in the unit's private runtime directory: the operator's user
+            # and password, and this module's host and port. Both daemons
+            # read that; the options stay the one truth about the node.
+            RuntimeDirectory = "${name}-${instanceName}";
+            RuntimeDirectoryMode = "0700";
             ExecStart =
               let
-                # %d: the unit's credentials directory, expanded by systemd.
-                argv = lib.escapeShellArgs (
-                  [
-                    (lib.getExe cfg.package)
-                    flags.grpcBind
-                    cfg.grpcBindAddr
-                    flags.httpBind
-                    cfg.httpBindAddr
-                    flags.rpcHost
-                    cfg.rpcHost
-                    flags.rpcPort
-                    (toString cfg.rpcPort)
-                    "--data-dir"
-                    "/var/lib/${name}-${instanceName}"
-                  ]
-                  ++ lib.optionals (logFileFlag != null) [
-                    logFileFlag
-                    "/dev/stdout"
-                  ]
-                  ++ lib.optionals (cfg.zcashConfPath != null) [
-                    flags.zcashConf
-                    "%d/zcash-conf"
-                  ]
-                  ++ lib.optionals cfg.insecureNoTLS [ "--no-tls-very-insecure" ]
-                  ++ lib.optionals (!cfg.insecureNoTLS) [
-                    "--tls-cert"
-                    "%d/tls-cert"
-                    "--tls-key"
-                    "%d/tls-key"
-                  ]
-                  ++ cfg.extraArgs
-                );
+                # The paths systemd provides are shell variables inside a
+                # script (specifiers like %d expand only on the ExecStart
+                # line), so they are appended unescaped, after the arguments
+                # that are data.
+                argv =
+                  lib.escapeShellArgs (
+                    [
+                      (lib.getExe cfg.package)
+                      flags.grpcBind
+                      cfg.grpcBindAddr
+                      flags.httpBind
+                      cfg.httpBindAddr
+                      flags.rpcHost
+                      cfg.rpcHost
+                      flags.rpcPort
+                      (toString cfg.rpcPort)
+                      "--data-dir"
+                      "/var/lib/${name}-${instanceName}"
+                    ]
+                    ++ lib.optionals (logFileFlag != null) [
+                      logFileFlag
+                      "/dev/stdout"
+                    ]
+                    ++ lib.optionals cfg.insecureNoTLS [ "--no-tls-very-insecure" ]
+                    ++ cfg.extraArgs
+                  )
+                  + lib.optionalString (
+                    cfg.zcashConfPath != null
+                  ) " ${flags.zcashConf} \"$RUNTIME_DIRECTORY/zcash.conf\""
+                  + lib.optionalString (
+                    !cfg.insecureNoTLS
+                  ) " --tls-cert \"$CREDENTIALS_DIRECTORY/tls-cert\" --tls-key \"$CREDENTIALS_DIRECTORY/tls-key\"";
               in
-              if logFileFlag == null then
-                argv
-              else
-                lib.escapeShellArgs [
-                  pkgs.runtimeShell
-                  "-c"
-                  "set -o pipefail; ${argv} | cat"
-                ];
+              pkgs.writeShellScript "${name}-${instanceName}-start" ''
+                set -o pipefail
+                ${lib.optionalString (cfg.zcashConfPath != null) ''
+                  {
+                    grep -E '^rpc(user|password)=' "$CREDENTIALS_DIRECTORY/zcash-conf"
+                    echo "rpcbind=${cfg.rpcHost}"
+                    echo "rpcport=${toString cfg.rpcPort}"
+                  } > "$RUNTIME_DIRECTORY/zcash.conf"
+                ''}
+                ${if logFileFlag == null then "exec ${argv}" else "${argv} | cat"}
+              '';
           };
       }
     ) instances;

@@ -76,13 +76,15 @@ rec {
   # around that, `"${./tls.key}"` and pkgs.writeText.
   #
   # It reaches the unit through LoadCredential=, never on argv or in the
-  # store: pid 1 reads the operator's file as root and places a 0400 copy,
-  # owned by the service's uid, under /run/credentials/<unit>.service/. That
-  # is also the only way a DynamicUser can read a file at all -- its uid
-  # does not exist until the unit starts, so nothing can be chowned to it in
-  # advance -- which is why every other secret-delivery path here failed on
-  # first read with EACCES. Inside ExecStart the directory is `%d`; a config
-  # file that needs the literal path takes it from `credentialPath`.
+  # store: pid 1 reads the operator's file as root and places a copy under
+  # /run/credentials/<unit>.service/ that only the service's group can read
+  # (root:<group>, 0440, in a directory nobody else may enter). That is also
+  # the only way a DynamicUser can read a file at all -- its uid does not
+  # exist until the unit starts, so nothing can be chowned to it in advance
+  # -- which is why every other secret-delivery path here failed on first
+  # read with EACCES. Inside ExecStart the directory is `%d` or
+  # `$CREDENTIALS_DIRECTORY`; a config file that needs the literal path
+  # takes it from `credentialPath`.
   secretFile =
     description:
     lib.mkOption {

@@ -50,10 +50,16 @@ in
         for line in unit.splitlines():
             if "test-secrets" in line:
                 assert line.startswith("LoadCredential="), f"secret path outside LoadCredential: {line}"
-        owner, mode = machine.succeed(
-            "stat -c '%U %a' /run/credentials/lightwalletd-main.service/tls-key"
+        # systemd's shape: root-owned, readable by the service's group only,
+        # in a directory nobody else may enter.
+        group, mode = machine.succeed(
+            "stat -c '%G %a' /run/credentials/lightwalletd-main.service/tls-key"
         ).split()
-        assert owner != "root" and mode == "400", f"credential is {owner} {mode}, expected the service's user and 400"
+        assert (group, mode) == ("lightwalletd-main", "440"), f"credential is {group} {mode}, expected lightwalletd-main 440"
+        # And the composed zcash.conf: the operator's credentials, the
+        # module's node -- in the private runtime directory, not the store.
+        conf = machine.succeed("cat /run/lightwalletd-main/zcash.conf")
+        assert "rpcpassword=test" in conf and "rpcport=18232" in conf, conf
 
     with subtest("serves wallets over TLS with the configured certificate"):
         out = machine.succeed(
