@@ -30,16 +30,20 @@ print `verified`.
 `modules/yourthing/default.nix`, discovered the same way. Start from `modules/service.nix`: the options
 every service has (`enable`, `package`, `extraArgs`, `user`) and `identity`, which turns `user` into the
 hardened `serviceConfig`. Nodes and indexers are multi-instance (`modules/zaino` is the smallest
-example); wallets are single (`modules/zpay`). Add the service to `tests/units.nix`.
+example); wallets are single (`modules/zpay`). A secret the service reads is a `service.secretFile`
+option, a string delivered by `LoadCredential`, never `types.path` and never on argv. Add the service to
+`tests/units.nix`, then `just docs`.
 
 ## Before a PR
 
 ```console
 $ just fmt      # --no-cache: plain `nix fmt` can pass where CI fails
 $ just check    # builds and runs every binary for this system
+$ just docs     # after an option change; checks.options-doc fails while stale
 ```
 
-VM tests need Linux with KVM; CI runs them.
+VM tests need a Linux builder with KVM. CI has one, and a Mac gets one from nix-darwin's
+`nix.linux-builder`; see AGENTS.md.
 
 ## Review
 

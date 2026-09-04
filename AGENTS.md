@@ -58,6 +58,15 @@ defaults `user` to a static name and asserts it is not null. `tests/units.nix`
 asserts identity and hardening for every unit, including one deliberately
 shared user, so a deviation is confined by a test rather than a comment.
 
+**A secret is a string path handed over by `LoadCredential`, never a
+`types.path` and never on argv.** `service.secretFile`, `service.credentials`
+and `service.notInStore` in `modules/service.nix` are the three rules; the
+comment there says why each exists: a path literal is copied to the
+world-readable store, a DynamicUser cannot read a root-owned file, and argv
+is the unit file, which is in the store. `tests/fixtures/credentials.nix` is
+how a test walks that path with no key material committed. Bitten: the
+options were `types.path` and the TLS branch had never run in any test.
+
 **Refuse to guess on security-relevant defaults.** Three modules already do:
 `openFirewall` never opens RPC, `lightwalletd` will not start without TLS
 unless `insecureNoTLS` is set, and `zallet` needs `acceptBetaRisk` because it
@@ -66,18 +75,20 @@ convenient option launders a decision that belongs to the operator.
 
 ## Testing modules
 
-`nixosTest` needs a Linux builder with KVM. It cannot run on macOS at all, so
-CI is the only place VM tests execute — and a wrong test costs a full round
-trip. Before pushing, get what you can locally by evaluating a real system:
+`nixosTest` needs a Linux builder with KVM. CI has one; a Mac has one too,
+through nix-darwin's `nix.linux-builder.enable = true`: nixpkgs pairs an
+aarch64-darwin host with an aarch64-linux guest under HVF, and
+`nix run .#nixosTests.aarch64-darwin.stack.driverInteractive` is a Python
+REPL with the machines up. Without a builder a wrong test still costs a CI
+round trip, so take what evaluation gives for free first: `checks.eval-units`
+forces the units machine's whole system on every system, and
+`nix eval .#nixosTests.x86_64-linux.<test>.driver.drvPath` does the same for
+one test; both fire every assertion and option type. The rendered unit is at
+`.#nixosTests.x86_64-linux.<test>.nodes.machine.systemd.services.<unit>`.
 
-```nix
-nixpkgs.lib.nixosSystem { system = "x86_64-linux"; modules = [ ... ]; }
-```
-
-then read `config.systemd.services.<name>.serviceConfig` and force
-`config.system.build.toplevel.drvPath`, which is what actually evaluates
-`assertions`. That catches option-type errors, bad ExecStart, and failed
-assertions without a Linux machine.
+Tests state only what they enable: every machine has every module and the
+dead-network Regtest node from `tests/fixtures/regtest.nix`. Subdirectories
+of `tests/` are fixtures, not tests.
 
 Better still, run the daemons directly. Two of the three VM failures so far
 were reproduced on the maintainer's Mac in two minutes each — zebrad looping on
@@ -86,6 +97,12 @@ seed-peer DNS, and lightwalletd exiting without RPC credentials.
 **An assertion must report what it saw.** `test $(stat -c %a X) = 700` fails
 without printing the mode, which cost a round trip to diagnose. Compare in
 Python and interpolate the value into the message.
+
+**A crash loop is never "failed".** Under `Restart=on-failure` a unit that
+dies every ten seconds is `activating`, not `failed`, and `is-active` is true
+for the second between. `NRestarts` is the number that says a service started
+cleanly; every per-service test asserts it is 0. That is what caught
+lightwalletd opening `/dev/stdout`, a journald socket, at every start.
 
 ## Hashes
 
@@ -127,6 +144,11 @@ Nothing caught it because nothing tests a platform you never build.
   sandbox on someone else's machine.
 - **Never read `$?` after a pipe** — you get the last command's status.
   Redirect to a file and echo `$?` on its own line.
+- **`"${pkgs.path}/x"` copies all of nixpkgs into the store**, and CI's
+  evaluation refuses that under `--no-build`. `pkgs.path + "/x"` stays a path;
+  a file from nixpkgs is `builtins.readFile`, never interpolated.
+- **`just docs` after changing an option.** `checks.options-doc` diffs
+  `docs/options.md` against the modules and is red while it is stale.
 - **Commits go through jj**, never raw git: `jj describe @ --stdin` (heredoc),
   `jj new`, `jj bookmark set main -r @-`, `jj git push --bookmark main`.
   Never `-m "..."`: backticks inside double quotes run as command substitution

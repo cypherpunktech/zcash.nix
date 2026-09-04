@@ -246,6 +246,10 @@
                 "org.opencontainers.image.version" = pkg.version;
                 "org.opencontainers.image.description" = pkg.meta.description;
                 "org.opencontainers.image.source" = "https://github.com/cypherpunktech/zcash.nix";
+                # The tag is the version and is re-pushed on every push to
+                # main; this is what says which commit a pulled image is from
+                # (published.yml asserts it is main's tip).
+                "org.opencontainers.image.revision" = self.rev or "dirty";
                 "org.opencontainers.image.url" = pkg.meta.homepage;
                 "org.opencontainers.image.licenses" = lib.concatMapStringsSep "," (l: l.spdxId or l.shortName) (
                   lib.toList pkg.meta.license
@@ -364,6 +368,39 @@
         )
       );
 
+      # The options reference, rendered from the modules by nixpkgs' own tool
+      # so it cannot disagree with them. Evaluated outside NixOS: descriptions
+      # and types need no system, and `_module.check = false` lets the
+      # modules' systemd, users and firewall definitions go unmatched.
+      # docs/options.md is the committed rendering; checks.options-doc fails
+      # while it is stale and `just docs` regenerates it.
+      optionsDoc =
+        pkgs:
+        pkgs.nixosOptionsDoc {
+          options =
+            (lib.evalModules {
+              modules = lib.attrValues modules ++ [ { _module.check = false; } ];
+              specialArgs = { inherit pkgs; };
+            }).options.services.zcash;
+          # Declarations as name/url pairs: a bare string is rendered as a
+          # nixpkgs file, and these are not nixpkgs.
+          transformOptions =
+            o:
+            o
+            // {
+              declarations = map (
+                d:
+                let
+                  file = lib.removePrefix "${self}/" (toString d);
+                in
+                {
+                  name = file;
+                  url = "https://github.com/cypherpunktech/zcash.nix/blob/main/${file}";
+                }
+              ) o.declarations;
+            };
+        };
+
       treefmtFor =
         pkgs:
         treefmt-nix.lib.evalModule pkgs {
@@ -452,6 +489,22 @@
           # The context is discarded because forcing the path is the whole
           # check; keeping it would make this derivation depend on BUILDING
           # that system, which is the VM test's job.
+          # docs/options.md is what the modules currently say; anything else
+          # is stale, and `just docs` is the fix. The committed file travels
+          # as a string so nothing is copied into the store for a comparison.
+          options-doc =
+            pkgs.runCommandLocal "options-doc"
+              {
+                committed = builtins.readFile ./docs/options.md;
+                passAsFile = [ "committed" ];
+              }
+              ''
+                if ! diff -u "$committedPath" ${self.docs.${pkgs.stdenv.hostPlatform.system}} | tee $out; then
+                  echo "docs/options.md is stale: run \`just docs\` and commit the result" >&2
+                  exit 1
+                fi
+              '';
+
           eval-units = pkgs.runCommandLocal "eval-units" {
             drv = builtins.unsafeDiscardStringContext self.nixosTests.x86_64-linux.units.nodes.machine.system.build.toplevel.drvPath;
           } "echo $drv > $out";
@@ -459,6 +512,9 @@
       );
 
       formatter = eachSystem (pkgs: (treefmtFor pkgs).config.build.wrapper);
+
+      # `nix build .#docs.<system>`: the options reference as CommonMark.
+      docs = eachSystem (pkgs: (optionsDoc pkgs).optionsCommonMark);
 
       # `nix run .#audit|verify|stale|fods`; `nix flake show` lists them with
       # what each claims.

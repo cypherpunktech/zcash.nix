@@ -54,6 +54,9 @@ jobs:
       # update.yml runs nix-update through the devshell, and the consumer
       # shell is an advertised output; neither is a check, so eval them here.
       - run: nix develop .#default --command true && nix develop .#zcash --command true
+      # The committed options reference matches the modules. A build, not an
+      # eval, but a few seconds of one, and this is the job it belongs to.
+      - run: nix build -L .#checks.x86_64-linux.options-doc
 
   discover:
     uses: ./.github/workflows/discover.yml

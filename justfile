@@ -33,6 +33,12 @@ build PKG: stage
 update PKG: stage
     nix-update --flake --version=stable {{ PKG }}
 
+# Regenerate the options reference after changing a module. checks.options-doc
+# fails while docs/options.md is stale, on every system, in the eval job.
+docs: stage
+    cp -f "$(nix build --no-link --print-out-paths ".#docs.$(nix eval --raw --impure --expr builtins.currentSystem)")" docs/options.md
+    chmod 644 docs/options.md
+
 # The trust gates (trust.yml, stale.yml), runnable here in a minute. Each is
 # a flake app carrying its own tools (flake.nix `commands`), so local and CI
 # run the same script with the same binaries.

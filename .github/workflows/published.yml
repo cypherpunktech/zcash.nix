@@ -1,0 +1,94 @@
+# Proves the ARTEFACTS, not the tree. check.yml proves main builds in a
+# checkout with the Cachix action wired; a user has a fresh machine and a
+# URL. Everything here runs against github:cypherpunktech/zcash.nix the way a
+# stranger fetches it, with --max-jobs 0 so a cache miss is a red job in
+# seconds rather than a build that hides the miss. There is deliberately no
+# checkout, and no repository nix.conf, in the proving jobs: a user has
+# neither.
+#
+# Three things rot between "CI green" and "a user is happy", one job each:
+# the cache (a revoked token, retention), the multi-arch image tag (per-arch
+# pushes fine, the manifest stale or from an older commit), and the flake as
+# consumed (a user's newer nixpkgs under the modules).
+#
+# What it does not prove, and says so: the modules as a consumer's system.
+# Building one is uncached and slow; `consumer` evaluates them and no more.
+name: published
+
+permissions:
+  contents: read
+
+on:
+  schedule:
+    - cron: "51 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  # The one job that needs the tree: what exists and where it is built.
+  discover:
+    uses: ./.github/workflows/discover.yml
+
+  cache:
+    needs: discover
+    name: nix run ${{ matrix.package }} · ${{ matrix.target.system }}
+    runs-on: ${{ matrix.target.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        package: ${{ fromJSON(needs.discover.outputs.packages) }}
+        target: ${{ fromJSON(needs.discover.outputs.targets) }}
+    env:
+      PKG: ${{ matrix.package }}
+      SYS: ${{ matrix.target.system }}
+      FLAKE: github:cypherpunktech/zcash.nix
+    steps:
+      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      # The flake's own nixConfig must be enough, because that is all a user
+      # gets; the runner's user is trusted, so --accept-flake-config takes.
+      # smokeArgs are the package's own proof and carry no spaces.
+      - run: |
+          claimed=$(nix eval --json "$FLAKE#packages.$SYS" --apply "p: p ? \"$PKG\"")
+          [ "$claimed" = true ] || { echo "::notice title=Not claimed::$PKG does not claim $SYS"; exit 0; }
+          # shellcheck disable=SC2046
+          nix run "$FLAKE#$PKG" --accept-flake-config --max-jobs 0 -- \
+            $(nix eval --json "$FLAKE#packages.$SYS.\"$PKG\".smokeArgs" | jq -r '.[]')
+
+  image:
+    needs: discover
+    name: docker run ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.discover.outputs.images) }}
+    env:
+      IMG: ${{ matrix.image }}
+      FLAKE: github:cypherpunktech/zcash.nix
+    steps:
+      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      # The image runs, and the manifest the tag resolves to was built from
+      # main's tip: the tag is the version and is re-pushed on every push, so
+      # the revision label is what distinguishes today's from last week's. A
+      # push to main whose image job is still running makes this red for the
+      # duration, which is the truth.
+      - run: |
+          tag=$(nix eval --raw "$FLAKE#images.x86_64-linux.\"$IMG\".imageTag")
+          rev=$(nix flake metadata "$FLAKE" --json | jq -r .revision)
+          ref="ghcr.io/cypherpunktech/$IMG:$tag"
+          # shellcheck disable=SC2046
+          docker run --rm "$ref" $(nix eval --json "$FLAKE#packages.x86_64-linux.\"$IMG\".smokeArgs" | jq -r '.[]')
+          label=$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$ref")
+          [ "$label" = "$rev" ] || { echo "::error title=Stale image::$ref was built from ${label:-no revision}; main is $rev"; exit 1; }
+
+  consumer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      # The lock is the tree's; a consumer overrides it. This is the run that
+      # notices nixpkgs-unstable moving under the modules and the checks.
+      - run: |
+          nix flake check github:cypherpunktech/zcash.nix --all-systems --no-build \
+            --override-input nixpkgs github:NixOS/nixpkgs/nixos-unstable
