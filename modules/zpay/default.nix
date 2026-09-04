@@ -25,6 +25,7 @@ let
     name = "zpay";
     description = "zpay, a Zcash-native payments facilitator";
   };
+  bindAddr = cfg.environment.ZPAY_SERVER__BIND_ADDR or "127.0.0.1:8080";
 in
 {
   # Single-instance: a payments facilitator is one per machine.
@@ -72,21 +73,18 @@ in
       wants = [ "network-online.target" ];
 
       inherit (cfg) environment;
+      unitConfig.RequiresMountsFor = [ "/var/lib/zpay" ];
 
-      serviceConfig = service.identity cfg "zpay" // {
-        ExecStart = lib.escapeShellArgs ([ "${cfg.package}/bin/zpay-runtime" ] ++ cfg.extraArgs);
-        EnvironmentFile = lib.mkIf (cfg.environmentFile != null) cfg.environmentFile;
-      };
+      serviceConfig =
+        service.identity cfg "zpay"
+        // service.bindCaps bindAddr
+        // {
+          ExecStart = lib.escapeShellArgs ([ "${cfg.package}/bin/zpay-runtime" ] ++ cfg.extraArgs);
+          EnvironmentFile = lib.mkIf (cfg.environmentFile != null) cfg.environmentFile;
+        };
     };
 
-    networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [
-      (
-        let
-          addr = cfg.environment.ZPAY_SERVER__BIND_ADDR or "127.0.0.1:8080";
-        in
-        lib.toInt (lib.last (lib.splitString ":" addr))
-      )
-    ];
+    networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [ (service.portOf bindAddr) ];
 
     users = service.users { inherit cfg; };
   };

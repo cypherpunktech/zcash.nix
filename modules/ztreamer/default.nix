@@ -112,24 +112,28 @@ in
         wantedBy = [ "multi-user.target" ];
         after = [ "network-online.target" ];
         wants = [ "network-online.target" ];
-        serviceConfig = service.identity cfg "ztreamer-${instanceName}" // {
-          # iroh's network monitor needs netlink; see modules/zakura.
-          RestrictAddressFamilies = (import ../hardening.nix).RestrictAddressFamilies ++ [ "AF_NETLINK" ];
-          ExecStart = lib.escapeShellArgs (
-            [
-              (lib.getExe cfg.package)
-              "--zakura-config"
-              (toml.generate "zakura-${instanceName}.toml" cfg.settings)
-              "--index-dir"
-              "/var/lib/ztreamer-${instanceName}/index"
-              "--grpc-listen"
-              cfg.grpcListen
-              "--metrics-listen"
-              cfg.metricsListen
-            ]
-            ++ cfg.extraArgs
-          );
-        };
+        unitConfig.RequiresMountsFor = [ "/var/lib/ztreamer-${instanceName}" ];
+        serviceConfig =
+          service.identity cfg "ztreamer-${instanceName}"
+          // service.bindCaps cfg.grpcListen
+          // {
+            # iroh's network monitor needs netlink; see modules/zakura.
+            RestrictAddressFamilies = (import ../hardening.nix).RestrictAddressFamilies ++ [ "AF_NETLINK" ];
+            ExecStart = lib.escapeShellArgs (
+              [
+                (lib.getExe cfg.package)
+                "--zakura-config"
+                (toml.generate "zakura-${instanceName}.toml" cfg.settings)
+                "--index-dir"
+                "/var/lib/ztreamer-${instanceName}/index"
+                "--grpc-listen"
+                cfg.grpcListen
+                "--metrics-listen"
+                cfg.metricsListen
+              ]
+              ++ cfg.extraArgs
+            );
+          };
       }
     ) instances;
 

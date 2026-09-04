@@ -92,6 +92,7 @@ let
         wantedBy = [ "multi-user.target" ];
         after = [ "network-online.target" ] ++ lib.optional (rt != "ingest") "${unit}-ingest.service";
         wants = [ "network-online.target" ];
+        unitConfig.RequiresMountsFor = [ "/var/lib/${unit}" ];
         serviceConfig = service.identity cfg unit // {
           ExecStart = lib.escapeShellArgs (
             [

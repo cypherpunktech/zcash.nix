@@ -107,6 +107,7 @@ in
         after = [ "network-online.target" ] ++ lib.optional (cfg.node != null) "${cfg.node}.service";
         wants = [ "network-online.target" ] ++ lib.optional (cfg.node != null) "${cfg.node}.service";
         partOf = lib.optional (cfg.node != null) "${cfg.node}.service";
+        unitConfig.RequiresMountsFor = [ "/var/lib/zaino-${instanceName}" ];
         serviceConfig =
           service.identity cfg "zaino-${instanceName}"
           // service.credentials {

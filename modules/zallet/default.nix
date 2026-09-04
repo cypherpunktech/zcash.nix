@@ -98,6 +98,10 @@ in
       wantedBy = [ "multi-user.target" ];
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
+      unitConfig.RequiresMountsFor = lib.unique [
+        stateDir
+        cfg.dataDir
+      ];
 
       # The 0700 state directory service.identity applies is about tidiness
       # everywhere else. Here it is about spending keys, and the wallet's own

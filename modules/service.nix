@@ -26,11 +26,8 @@ rec {
   options = {
     enable = lib.mkEnableOption description;
 
-    package = lib.mkOption {
-      type = lib.types.package;
-      default = self.packages.${pkgs.stdenv.hostPlatform.system}.${name};
-      defaultText = lib.literalExpression "zcash-nix.packages.\${system}.${name}";
-      description = "The ${name} package to run.";
+    package = lib.mkPackageOption self.packages.${pkgs.stdenv.hostPlatform.system} name {
+      pkgsText = "zcash-nix.packages.\${system}";
     };
 
     extraArgs = lib.mkOption {
@@ -135,6 +132,18 @@ rec {
 
   # The enabled instances of a multi-instance service.
   enabled = instances: lib.filterAttrs (_: cfg: cfg.enable) instances;
+
+  # The one capability a listener can need: binding below 1024. hardening.nix
+  # empties the bounding set, so a public lightwalletd on :443 -- what
+  # wallets expect -- would fail with EACCES and nothing would say why.
+  # Derived from the address the operator set, so the grant exists exactly
+  # where the port demands it and nowhere else.
+  bindCaps =
+    addr:
+    lib.optionalAttrs (portOf addr < 1024) {
+      AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ];
+      CapabilityBoundingSet = [ "CAP_NET_BIND_SERVICE" ];
+    };
 
   portOf = addr: lib.toInt (lib.last (lib.splitString ":" addr));
   # "127.0.0.1:8232" -> "127.0.0.1"; "[::1]:8232" -> "::1".

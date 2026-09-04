@@ -154,8 +154,10 @@ in
         wantedBy = [ "multi-user.target" ];
         after = [ "network-online.target" ];
         wants = [ "network-online.target" ];
+        unitConfig.RequiresMountsFor = [ "/var/lib/${name}-${instanceName}" ];
         serviceConfig =
           service.identity cfg "${name}-${instanceName}"
+          // service.bindCaps cfg.grpcBindAddr
           // service.credentials {
             zcash-conf = cfg.zcashConfPath;
             tls-cert = cfg.tls.certFile;

@@ -136,6 +136,10 @@ in
         wantedBy = [ "multi-user.target" ];
         after = [ "network-online.target" ];
         wants = [ "network-online.target" ];
+        # A mainnet chain is hundreds of GB and routinely its own mount.
+        # Without this, a late mount means StateDirectory creates the
+        # directory on the root filesystem and the node resyncs into it.
+        unitConfig.RequiresMountsFor = [ "/var/lib/${name}-${instanceName}" ];
         serviceConfig =
           service.identity cfg "${name}-${instanceName}"
           // lib.optionalAttrs (addressFamilies != [ ]) {

@@ -63,6 +63,20 @@
   # someone noticing which is which.
   UMask = "0077";
 
+  # on-failure, not always: a clean exit is an operator's `systemctl stop`
+  # racing an admin script, and restarting behind their back hides it. The
+  # delay backs off: a node with a corrupt database, or an indexer whose node
+  # is down, otherwise restarts every ten seconds indefinitely and fills the
+  # journal with the same stack trace.
   Restart = "on-failure";
   RestartSec = "10s";
+  RestartSteps = 20;
+  RestartMaxDelaySec = "3min";
+
+  # A stop is a RocksDB flush of whatever the sync loop was mid-write, and
+  # systemd's default is 90 s then SIGKILL; a killed flush is a re-verify on
+  # the next start. Five minutes is a bound chosen for that, not a
+  # measurement -- replace it with one when a synced mainnet node has been
+  # timed.
+  TimeoutStopSec = "5min";
 }
