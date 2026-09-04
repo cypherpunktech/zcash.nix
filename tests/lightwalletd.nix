@@ -5,7 +5,7 @@
 # appears when both units exist together. Credentials and TLS key are real
 # files handed over as systemd credentials (tests/fixtures/credentials.nix): the
 # module's secret path is the one a hardened unit breaks on, so it is the one
-# the test walks.
+# the test walks. The node is tests/fixtures/regtest.nix.
 self:
 { pkgs, ... }:
 let
@@ -17,29 +17,9 @@ in
   nodes.machine =
     { pkgs, ... }:
     {
-      imports = [
-        self.nixosModules.zebra
-        self.nixosModules.lightwalletd
-        ./fixtures/credentials.nix
-      ];
+      imports = [ ./fixtures/credentials.nix ];
 
-      services.zcash.zebra.regtest = {
-        enable = true;
-        settings = {
-          network = {
-            network = "Regtest";
-            # Empty seed lists: the VM has no network, and zebrad otherwise loops
-            # on seed-peer DNS forever and never binds RPC. See tests/zebra.nix
-            # for the full explanation.
-            initial_mainnet_peers = [ ];
-            initial_testnet_peers = [ ];
-            cache_dir = false;
-          };
-          state.ephemeral = true;
-          rpc.listen_addr = "127.0.0.1:18232";
-          rpc.enable_cookie_auth = false;
-        };
-      };
+      services.zcash.zebra.regtest.enable = true;
 
       services.zcash.lightwalletd.main = {
         enable = true;
@@ -61,8 +41,6 @@ in
 
   testScript = ''
     machine.wait_for_unit("zebra-regtest.service")
-    machine.wait_for_open_port(18232)
-
     machine.wait_for_unit("lightwalletd-main.service")
     machine.wait_until_succeeds("systemctl is-active --quiet lightwalletd-main.service", timeout=60)
 
@@ -85,6 +63,10 @@ in
         assert '"version"' in out, out
         machine.fail("grpcurl -plaintext -import-path /etc/walletrpc -proto service.proto "
                      "${certs.domain}:9067 cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLightdInfo")
+
+    with subtest("started once: no crash behind the start"):
+        restarts = machine.succeed("systemctl show -p NRestarts --value lightwalletd-main.service").strip()
+        assert restarts == "0", f"lightwalletd-main restarted {restarts} times"
 
     machine.succeed("test -d /var/lib/lightwalletd-main")
 

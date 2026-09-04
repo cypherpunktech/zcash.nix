@@ -10,39 +10,27 @@
 # GetLatestBlock, and the answer must be a height above zero -- blocks that
 # were mined here, indexed here, and served here, inside one VM.
 #
+# It is also the one test in the production shape: cookie auth on, the
+# indexer ordered after the node and holding its cookie as a credential
+# (`node`), and started exactly once.
+#
 # Run on a maintainer's Mac before it was a test: zebra mined 15 blocks in
 # 75 seconds, zaino reported height 23 two minutes in. The timeouts below are
 # that, with room.
-self:
-{ pkgs, ... }:
-{
+self: _: {
   name = "zcash-stack";
 
   nodes.machine =
-    { ... }:
+    { pkgs, ... }:
     {
-      imports = [
-        self.nixosModules.zebra
-        self.nixosModules.zaino
-      ];
-
       services.zcash.zebra.regtest = {
         enable = true;
         settings = {
-          network = {
-            network = "Regtest";
-            initial_mainnet_peers = [ ];
-            initial_testnet_peers = [ ];
-            cache_dir = false;
-            testnet_parameters.activation_heights.NU5 = 1;
-          };
-          state.ephemeral = true;
-          # Cookie auth stays ON, as it would in production: zaino reads the
-          # cookie through `node` below, and the test reads it as root.
-          rpc = {
-            listen_addr = "127.0.0.1:18232";
-            indexer_listen_addr = "127.0.0.1:18230";
-          };
+          network.testnet_parameters.activation_heights.NU5 = 1;
+          rpc.indexer_listen_addr = "127.0.0.1:18230";
+          # On, unlike the fixture's default: zaino reads the cookie through
+          # `node` below, and the test reads it as root.
+          rpc.enable_cookie_auth = true;
           mining = {
             # Zebra's own documented Regtest address; the subsidy goes nowhere
             # anyone can spend, which is the point of a test chain.
@@ -81,7 +69,6 @@ self:
 
   testScript = ''
     machine.wait_for_unit("zebra-regtest.service")
-    machine.wait_for_open_port(18232)
     machine.wait_for_open_port(18230)
 
     # The chain grows on its own. The cookie is `user:password` on one line,

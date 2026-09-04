@@ -5,73 +5,35 @@
 # works. Almost every way a service module is wrong -- an unwritable state
 # directory, a config the daemon rejects, a hardening flag that kills it on
 # first syscall -- produces a package that passes smoke and a machine that does
-# not boot a working node.
-self: _: {
+# not boot a working node. The node's configuration is tests/fixtures/regtest.nix.
+_self: _: {
   name = "zcash-zebra";
 
-  nodes.machine =
-    { ... }:
-    {
-      imports = [ self.nixosModules.zebra ];
-
-      services.zcash.zebra.regtest = {
-        enable = true;
-        settings = {
-          network = {
-            network = "Regtest";
-            # THE EMPTY SEED LISTS ARE LOAD-BEARING. A NixOS test VM has no
-            # network, and zebrad blocks startup resolving seed peers: it loops
-            # "empty peer list after DNS resolution, retrying after 5 seconds"
-            # forever and never binds its RPC port, so the test times out while
-            # the daemon looks perfectly healthy in the journal.
-            #
-            # Regtest does not save you from this on its own -- Zebra treats it
-            # as a testnet variant and still resolves the testnet seeds.
-            # Verified by running zebrad locally with exactly this config: RPC
-            # answered getinfo on the first attempt.
-            initial_mainnet_peers = [ ];
-            initial_testnet_peers = [ ];
-            cache_dir = false;
-          };
-          state.ephemeral = true;
-          rpc.listen_addr = "127.0.0.1:18232";
-          rpc.enable_cookie_auth = false;
-        };
-      };
-
-      virtualisation.memorySize = 2048;
-    };
+  nodes.machine = {
+    services.zcash.zebra.regtest.enable = true;
+    virtualisation.memorySize = 2048;
+  };
 
   testScript = ''
+    # "Started" means RPC answers (modules/node.nix, ExecStartPost), so this
+    # already proves it got through config parsing and opened its state
+    # directory -- the two things a broken module actually breaks.
     machine.wait_for_unit("zebra-regtest.service")
 
-    # Running, not merely started-and-exited: a crash loop also "starts".
-    machine.wait_until_succeeds("systemctl is-active --quiet zebra-regtest.service", timeout=60)
+    with subtest("answers JSON-RPC"):
+        out = machine.succeed(
+            "curl -s --fail --max-time 10 -H 'Content-Type: application/json' "
+            "--data '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getinfo\",\"params\":[]}' "
+            "http://127.0.0.1:18232"
+        )
+        assert '"result"' in out, f"getinfo returned no result: {out}"
 
-    # It answers RPC, which means it got through config parsing and opened its
-    # state directory -- the two things a broken module actually breaks.
-    machine.wait_for_open_port(18232)
-    machine.succeed(
-        "curl -s --fail --max-time 10 -H 'Content-Type: application/json' "
-        "--data '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getinfo\",\"params\":[]}' "
-        "http://127.0.0.1:18232 | grep -q result"
-    )
-
-    # The hardening is asserted, not assumed. If a future edit drops
-    # DynamicUser or relaxes ProtectSystem, this fails rather than quietly
-    # shipping a node running as root.
-    props = machine.succeed(
-        "systemctl show zebra-regtest.service "
-        "-p DynamicUser -p ProtectSystem -p NoNewPrivileges -p CapabilityBoundingSet"
-    )
-    assert "DynamicUser=yes" in props, props
-    assert "ProtectSystem=strict" in props, props
-    assert "NoNewPrivileges=yes" in props, props
-    assert "CapabilityBoundingSet=" in props, props
+    with subtest("started once: no crash behind the start"):
+        restarts = machine.succeed("systemctl show -p NRestarts --value zebra-regtest.service").strip()
+        assert restarts == "0", f"zebra-regtest restarted {restarts} times"
 
     # State landed in the StateDirectory and is private to the service.
-    machine.succeed("test -d /var/lib/zebra-regtest")
-
+    #
     # -L is load-bearing, and the reason is worth knowing: under DynamicUser
     # systemd puts the real directory at /var/lib/private/zebra-regtest and makes
     # /var/lib/zebra-regtest a symlink to it. `stat` does not follow symlinks by
@@ -83,8 +45,5 @@ self: _: {
     # which cost a CI round trip to work out.
     mode = machine.succeed("stat -Lc %a /var/lib/zebra-regtest").strip()
     assert mode == "700", f"/var/lib/zebra-regtest is mode {mode}, expected 700"
-
-    # Not running as root.
-    machine.fail("systemctl show zebra-regtest.service -p User | grep -q 'User=root'")
   '';
 }

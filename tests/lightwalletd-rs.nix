@@ -5,7 +5,7 @@
 # than needed; no log redirect -- and one that is behaviour rather than
 # configuration: lightwalletd-rs checks its backend at startup, so a green
 # unit here means it reached the node.
-self:
+_self:
 { pkgs, ... }:
 let
   certs = import "${pkgs.path}/nixos/tests/common/acme/server/snakeoil-certs.nix";
@@ -16,26 +16,9 @@ in
   nodes.machine =
     { pkgs, ... }:
     {
-      imports = [
-        self.nixosModules.zebra
-        self.nixosModules.lightwalletd-rs
-        ./fixtures/credentials.nix
-      ];
+      imports = [ ./fixtures/credentials.nix ];
 
-      services.zcash.zebra.regtest = {
-        enable = true;
-        settings = {
-          network = {
-            network = "Regtest";
-            initial_mainnet_peers = [ ];
-            initial_testnet_peers = [ ];
-            cache_dir = false;
-          };
-          state.ephemeral = true;
-          rpc.listen_addr = "127.0.0.1:18232";
-          rpc.enable_cookie_auth = false;
-        };
-      };
+      services.zcash.zebra.regtest.enable = true;
 
       services.zcash.lightwalletd-rs.main = {
         enable = true;
@@ -51,8 +34,6 @@ in
 
   testScript = ''
     machine.wait_for_unit("zebra-regtest.service")
-    machine.wait_for_open_port(18232)
-
     machine.wait_for_unit("lightwalletd-rs-main.service")
     machine.wait_until_succeeds("systemctl is-active --quiet lightwalletd-rs-main.service", timeout=60)
     machine.wait_for_open_port(9067)
@@ -69,6 +50,10 @@ in
             "-CAfile ${certs.ca.cert} </dev/null 2>&1"
         )
         assert "Verify return code: 0 (ok)" in out, out
+
+    with subtest("started once: it reached the node on the first try"):
+        restarts = machine.succeed("systemctl show -p NRestarts --value lightwalletd-rs-main.service").strip()
+        assert restarts == "0", f"lightwalletd-rs-main restarted {restarts} times"
 
     machine.succeed("test -d /var/lib/lightwalletd-rs-main")
     machine.succeed("journalctl -u lightwalletd-rs-main.service --no-pager | head -c 1 | grep -q .")

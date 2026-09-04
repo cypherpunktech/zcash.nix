@@ -118,15 +118,24 @@ in
   };
 
   config = lib.mkIf (instances != { }) {
-    assertions = lib.mapAttrsToList (instanceName: cfg: {
-      # The cookie is the RPC's only authentication. Off on loopback is a
-      # local trust decision; off on an address the network can reach is a
-      # node anyone who finds the port can drive.
-      assertion =
-        (cfg.settings.rpc.enable_cookie_auth or true)
-        || service.loopback (cfg.settings.rpc.listen_addr or "127.0.0.1:0");
-      message = "services.zcash.${name}.${instanceName}: rpc.enable_cookie_auth = false with rpc.listen_addr ${cfg.settings.rpc.listen_addr} is an unauthenticated RPC on the network.";
-    }) instances;
+    # The cookie is the RPC's only authentication: zebra has no user/password
+    # mode. Off on loopback is a local trust decision; off on an address the
+    # network can reach is an RPC anyone who finds the port can drive. A
+    # warning rather than an assertion, because lightwalletd on another host
+    # has no cookie support and needs exactly this -- behind a firewall or a
+    # private network, which is the operator's to arrange and this module's
+    # to name.
+    warnings = lib.concatLists (
+      lib.mapAttrsToList (
+        instanceName: cfg:
+        lib.optional
+          (
+            !(cfg.settings.rpc.enable_cookie_auth or true)
+            && !service.loopback (cfg.settings.rpc.listen_addr or "127.0.0.1:0")
+          )
+          "services.zcash.${name}.${instanceName}: rpc.enable_cookie_auth = false with rpc.listen_addr ${cfg.settings.rpc.listen_addr} is an unauthenticated RPC reachable from the network; make sure only the intended hosts can."
+      ) instances
+    );
 
     systemd.services = lib.mapAttrs' (
       instanceName: cfg:

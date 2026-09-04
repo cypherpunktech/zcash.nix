@@ -311,7 +311,19 @@
             let
               name = lib.removeSuffix ".nix" file;
             in
-            lib.nameValuePair name (pkgs.testers.runNixOSTest (import (./tests + "/${file}") self))
+            lib.nameValuePair name (
+              pkgs.testers.runNixOSTest {
+                imports = [ (import (./tests + "/${file}") self) ];
+                # Every machine has every module and the dead-network Regtest
+                # node defined once (tests/fixtures/regtest.nix), so a test
+                # states only what it enables. Subdirectories are fixtures,
+                # not tests: the filter below takes files.
+                defaults.imports = [
+                  self.nixosModules.default
+                  ./tests/fixtures/regtest.nix
+                ];
+              }
+            )
           ) (lib.filterAttrs (f: _: lib.hasSuffix ".nix" f) (builtins.readDir ./tests))
         )
       );
@@ -322,6 +334,16 @@
         // lib.mapAttrs' (n: lib.nameValuePair "vm-${n}") self.nixosTests.${pkgs.stdenv.hostPlatform.system}
         // {
           formatting = (treefmtFor pkgs).config.build.check self;
+
+          # The units test's machine is a NixOS system with every module
+          # enabled. Forcing its drvPath evaluates every assertion, option
+          # type and unit definition, and needs no builder -- so this runs
+          # under `nix flake check --no-build` on every system, including a
+          # Mac, before the VM test ever boots it. AGENTS.md's manual
+          # "evaluate a real system" advice, as a gate.
+          eval-units = pkgs.runCommandLocal "eval-units" {
+            drv = self.nixosTests.x86_64-linux.units.nodes.machine.system.build.toplevel.drvPath;
+          } "echo $drv > $out";
         }
       );
 
