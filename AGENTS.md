@@ -84,7 +84,10 @@ round trip, so take what evaluation gives for free first: `checks.eval-units`
 forces the units machine's whole system on every system, and
 `nix eval .#nixosTests.x86_64-linux.<test>.driver.drvPath` does the same for
 one test; both fire every assertion and option type. The rendered unit is at
-`.#nixosTests.x86_64-linux.<test>.nodes.machine.systemd.services.<unit>`.
+`.#nixosTests.x86_64-linux.<test>.nodes.machine.systemd.services.<unit>`, and
+`just tests` parses every test's rendered Python: the driver's own syntax
+check runs only where the driver builds, and nixfmt re-indents a `''` string
+when the code around it moves. Bitten.
 
 Tests state only what they enable: every machine has every module and the
 dead-network Regtest node from `tests/fixtures/regtest.nix`. Subdirectories

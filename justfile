@@ -33,6 +33,12 @@ build PKG: stage
 update PKG: stage
     nix-update --flake --version=stable {{ PKG }}
 
+# Every VM test's Python, rendered and parsed here. The driver's own syntax
+# check runs only where the driver builds, which is Linux; an indentation slip
+# in a test otherwise costs a CI round trip to find.
+tests: stage
+    for t in $(nix eval --json .#nixosTests.x86_64-linux --apply builtins.attrNames | jq -r '.[]'); do nix derivation show "$(nix eval --raw ".#nixosTests.x86_64-linux.$t.driver.drvPath")" | jq -r '.derivations[].env.testScript' | nix run --inputs-from . nixpkgs#python3 -- -c 'import ast,sys; ast.parse(sys.stdin.read())' && echo "$t: parses"; done
+
 # Regenerate the options reference after changing a module. checks.options-doc
 # fails while docs/options.md is stale, on every system, in the eval job.
 docs: stage

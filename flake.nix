@@ -536,6 +536,7 @@
           # For working on THIS repository.
           default = pkgs.mkShellNoCC {
             packages = [
+              pkgs.jq
               pkgs.just
               pkgs.nix-update
             ];
