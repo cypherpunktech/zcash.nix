@@ -12,7 +12,7 @@
   protobuf,
 }:
 let
-  version = "1.3.1";
+  version = "1.3.2";
 in
 rustPlatform.buildRustPackage {
   pname = "zakura";
@@ -22,10 +22,10 @@ rustPlatform.buildRustPackage {
     owner = "zakura-core";
     repo = "zakura";
     tag = "v${version}";
-    hash = "sha256-Qboofl36wAeCFJeDcM7nPL1nYXrt9cd39Q6fUmxxBFw=";
+    hash = "sha256-t+YKzGfj/NbWJQW61TU1AqCMrVEEqgtoEy+Xqb+pS5k=";
   };
 
-  cargoHash = "sha256-wK4iFs/KvOZP+JG6xtcyWv8W1iURTD4HUxPTGQ2ItFU=";
+  cargoHash = "sha256-b2xL4zVjrMv2KWbVxbUgw+5796Fh23E2T3oWaDOd/lI=";
 
   # The crate is `zakura`; the binaries it produces are zakurad and the two
   # state-repair tools, which are the operator's recovery path and belong
