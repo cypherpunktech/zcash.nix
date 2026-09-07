@@ -1,0 +1,33 @@
+# Advisories this repository has looked at and decided to wait on, because
+# every one of them is in a dependency of an upstream's own committed
+# lockfile: the fix is their next release, not a change here. Read by
+# scripts/check-advisories.sh, which goes red when this set changes rather
+# than every day it is unchanged.
+#
+# An entry is a decision with an expiry, never a silence. The date is not
+# "safe until"; it is "ask again by". On it the advisory is reported once
+# more and the question is the same: has upstream shipped a fix, and if not,
+# is running this still acceptable for what the service does? Delete a line
+# when its advisory stops being reported -- the script says which.
+#
+# Reviewed 2026-09-07 against the pins current that day, every one of which
+# check-staleness.sh calls up to date, so there is no bump to take.
+#
+# id                 expires     why
+GO-2026-5932         2026-12-07  x/crypto/openpgp unmaintained; lightwalletd's go.mod, upstream's release
+GO-2026-5942         2026-12-07  x/net dnsmessage panic on invalid SVCB/HTTPS RR; lightwalletd's go.mod
+GO-2026-5970         2026-12-07  x/text infinite loop on invalid input; lightwalletd's go.mod
+GO-2026-6303         2026-12-07  x/crypto/ssh source-address option unenforced; lightwalletd's go.mod
+GO-2026-6354         2026-12-07  x/crypto/ssh deadlocked-channel DoS; lightwalletd's go.mod
+GO-2026-6355         2026-12-07  x/crypto/ssh deadlocked-channel DoS; lightwalletd's go.mod
+RUSTSEC-2026-0009    2026-12-07  time 0.3.37 stack exhaustion; zpay's Cargo.lock
+RUSTSEC-2026-0049    2026-12-07  rustls-webpki 0.102.8 CRL authority matching; zpay's Cargo.lock
+RUSTSEC-2026-0098    2026-12-07  rustls-webpki 0.102.8 URI name constraints; zpay's Cargo.lock
+RUSTSEC-2026-0099    2026-12-07  rustls-webpki 0.102.8 wildcard name constraints; zpay's Cargo.lock
+RUSTSEC-2026-0104    2026-12-07  rustls-webpki 0.102.8 panic parsing a CRL; zpay's Cargo.lock
+RUSTSEC-2026-0118    2026-12-07  hickory-proto 0.25.2 NSEC3 unbounded loop; zakura and ztreamer's lockfiles
+RUSTSEC-2026-0119    2026-12-07  hickory-proto 0.25.2 O(n^2) name compression; zakura and ztreamer's lockfiles
+RUSTSEC-2026-0194    2026-12-07  quick-xml 0.39.2 quadratic duplicate-attribute check; zebra's Cargo.lock
+RUSTSEC-2026-0195    2026-12-07  quick-xml 0.39.2 unbounded namespace allocation; zebra's Cargo.lock
+RUSTSEC-2026-0204    2026-12-07  crossbeam-epoch 0.9.18 invalid pointer deref in a Debug impl; zaino's Cargo.lock
+RUSTSEC-2026-0258    2026-12-07  h2 unbounded empty DATA frames; six upstreams' lockfiles, every one of them

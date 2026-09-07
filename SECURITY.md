@@ -33,8 +33,11 @@ unpinned, unreproducible, hand-installed binaries.
   source built. Today: zinder, lightwalletd-rs. The others sign binaries or nothing; the daily `trust`
   run lists them as unsigned.
 - **Vulnerable dependencies are reported, not patched.** cargo-audit and govulncheck run daily over
-  what each build vendors. Red until upstream ships the bump. Check the `trust` workflow before running
-  a node from here.
+  what each build vendors. Every advisory they currently find is in a dependency of an upstream's own
+  committed lockfile, so the fix is that upstream's next release; each is listed in
+  [`scripts/advisories-accepted.txt`](scripts/advisories-accepted.txt) with the reason and a date to
+  look again, and the check goes red when a new one appears or an acceptance expires. That file is the
+  list of known-vulnerable dependencies a node built from here is running: read it before you do.
 - **Upstream test suites are not run.** They need live peers and chain state. Each binary is executed
   once (`checks.smoke-*`) and each module is booted in a VM; neither is a correctness test.
 - **Build-time code execution.** Building runs every crate's `build.rs`. Unavoidable, hence the sandbox.

@@ -1,10 +1,14 @@
 # Two claims about the source, each written as something that can go red.
 #
 # advisories: no lockfile we build from names a dependency with a published
-# vulnerability. A pin does not change when an advisory is published, so no
-# other gate here can notice one. Red until upstream ships the bump -- on
-# purpose; a gate that is quietly green while a node runs a vulnerable h2 is
-# worse than none.
+# vulnerability, except the ones scripts/advisories-accepted.txt records with
+# a reason and a date. A pin does not change when an advisory is published, so
+# no other gate here can notice one. Every advisory in that file is in a
+# dependency of an upstream's own committed lockfile, where the only fix is
+# their next release: red every day for a month is how a gate stops being
+# read on the day something new appears. So this goes red when the set
+# CHANGES -- a new advisory, or an acceptance out of time -- and the file is
+# the honest list of what a node from here is running.
 #
 # provenance: where an upstream signs its release tags, the pinned tag carries
 # the maintainer's signature and its tree is byte-for-byte the pinned source.
@@ -35,6 +39,7 @@ on:
   pull_request:
     paths:
       - scripts/check-advisories.sh
+      - scripts/advisories-accepted.txt
       - scripts/verify-upstream.sh
       - scripts/check-fods.sh
       - "packages/*/allowed_signers"

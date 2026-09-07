@@ -22,6 +22,8 @@ permissions:
   pull-requests: write
   # gh workflow run, to put checks on the PR it opened.
   actions: write
+  # To record the verdict of that run on the PR's head; see the merge step.
+  statuses: write
 
 concurrency:
   group: update
@@ -152,22 +154,62 @@ jobs:
 
       # Nothing GITHUB_TOKEN does triggers a workflow, by GitHub's rule against
       # runaway automation: not the PR it opens, and not the merge it performs.
-      # workflow_dispatch is the one event that rule allows, so this step does
-      # by hand what events would have done. It dispatches check.yml on the
-      # branch (its `ci` check lands on the PR's head, which the ruleset on
-      # main requires), waits for it, merges, then dispatches check.yml on main
-      # so the merged tip gets the run that publishes images and fills the
-      # cache. A red branch run stops here, PR left open with the reason on it.
+      # The run the PR event would have started is created but held at
+      # `action_required`, because this repository asks for approval from
+      # first-time contributors and github-actions[bot] is one of those
+      # forever. A held run reports nothing, so the PR has no checks at all
+      # and the `ci` the ruleset on main requires is never satisfied: the
+      # merge below failed exactly this way on 2026-09-07, twice.
+      #
+      # So the branch is tested by dispatch, and the verdict of THAT run --
+      # the full matrix over exactly this commit, watched here to completion
+      # -- is recorded on the PR's head as the `ci` status. A required context
+      # is satisfied by a check run or a commit status of that name, and this
+      # is the latter, carrying a link to the run that earned it. A red branch
+      # run exits before the status is written and leaves the PR open with the
+      # reason on it. Then the merge, then a run on main so the merged tip
+      # publishes its images and fills the cache.
       - name: Test the branch, merge when green, test main
         if: steps.pr.outputs.pull-request-number != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ steps.pr.outputs.pull-request-number }}
           BRANCH: update/${{ matrix.package }}
+          SHA: ${{ steps.pr.outputs.pull-request-head-sha }}
         run: |
           gh workflow run check.yml --ref "$BRANCH"
-          sleep 30
-          run=$(gh run list --workflow check.yml --branch "$BRANCH" --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId')
+          # The run is found by the commit it tests, never by being the newest:
+          # two dispatches close together are otherwise indistinguishable and
+          # the wrong one gets watched. It does not exist the instant it is
+          # asked for, hence the wait.
+          for _ in $(seq 30); do
+            run=$(gh run list --workflow check.yml --branch "$BRANCH" --event workflow_dispatch \
+              --json databaseId,headSha --jq "[.[] | select(.headSha == \"$SHA\")][0].databaseId")
+            [ -n "$run" ] && break
+            sleep 10
+          done
+          [ -n "$run" ] || { echo "::error::no check.yml run appeared for $SHA on $BRANCH"; exit 1; }
           gh run watch "$run" --exit-status --interval 60
+          gh api -X POST "repos/$GITHUB_REPOSITORY/statuses/$SHA" \
+            -f state=success -f context=ci \
+            -f description="full matrix green on this branch" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run"
+
+          # The step states its own premise and checks it, because the premise
+          # is about GitHub's behaviour rather than this repository's: that a
+          # commit status satisfies a required context the same way a check run
+          # does. Mergeability is recomputed asynchronously, hence the wait. If
+          # this ever fails, the PR is open and green and merging it by hand
+          # costs nothing -- but the automation is lying and must change.
+          for _ in $(seq 12); do
+            state=$(gh pr view "$PR" --json mergeStateStatus --jq .mergeStateStatus)
+            [ "$state" = CLEAN ] && break
+            sleep 10
+          done
+          [ "$state" = CLEAN ] || {
+            echo "::error::PR #$PR is $state after recording ci=success on $SHA; the ruleset did not take the commit status. Merge it by hand and rethink this step."
+            exit 1
+          }
+
           gh pr merge --squash "$PR"
           gh workflow run check.yml --ref main
