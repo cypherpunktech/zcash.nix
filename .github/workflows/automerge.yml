@@ -1,0 +1,45 @@
+# The ruleset on main already decides whether a dependabot PR may land: one
+# required check, `ci`, green iff every package built on every system, every VM
+# test passed and every image built. Nothing is left for a human to read in
+# `e8be781 -> 0af3d14` -- a week of nixpkgs is not reviewable, and the build
+# matrix is the review. What stops it merging is mechanical: GitHub's
+# auto-merge is opt-in PER PULL REQUEST, dependabot cannot set it on its own,
+# and so the button is clicked by hand for a decision already made.
+#
+# Only the nix inputs. An actions bump is arbitrary code that runs WITH
+# CACHIX_AUTH_TOKEN and packages: write, so a green `ci` proves it builds and
+# says nothing about what else it did while building; auto-merging it would be
+# trusting the check that the change itself produced. Those are read by hand,
+# which is affordable because there are a few a year. The split is by blast
+# radius, not by version: neither ecosystem has semver here -- a nix input is a
+# bare rev, and an action bump moves a SHA within the same tag -- so a
+# patch/minor filter would encode a distinction these inputs do not have.
+#
+# pull_request_target runs this file FROM MAIN, which is the only reason it may
+# hold write permissions near a fork's branch. It must never check out
+# head_ref: that combination hands the PR's own code the token below.
+name: automerge
+
+permissions:
+  contents: read
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  automerge:
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]'
+      && startsWith(github.head_ref, 'dependabot/nix/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Queue the merge; the ruleset holds it until `ci` reports.
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - env:
+          PR: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh pr merge --auto --squash "$PR"
