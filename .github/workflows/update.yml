@@ -97,7 +97,7 @@ jobs:
           # that shape is a candidate. Without this nix-update took zaino's
           # `backup/pre-nfs-greenfield-20260920` for a release (#8).
           regex=()
-          [ "$target" = branch ] || regex=(--version-regex '^v?([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$')
+          [ "$target" = branch ] || regex=(--version-regex '^v?([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$')
           echo "bumping $PKG (tag: $tag) toward: $target"
           nix develop --command nix-update --flake --version="$target" "${regex[@]}" "$PKG"
 
