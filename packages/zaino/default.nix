@@ -18,21 +18,21 @@
   protobuf,
 }:
 let
-  version = "0.9.0";
+  version = "backup/pre-nfs-greenfield-20260920";
 
   src = fetchFromGitHub {
     owner = "zingolabs";
     repo = "zaino";
     # Upstream tags releases without a `v` prefix.
     tag = version;
-    hash = "sha256-fOtSK4OvOMXwv8RcjH26Vz5pvY2VrtekW7hQ2i430ak=";
+    hash = "sha256-DGF1IQ+F0WkFSHePNXJ3wEojNtB6sZ0Hix2lcRqEWQ0=";
   };
 in
 rustPlatform.buildRustPackage {
   pname = "zaino";
   inherit version src;
 
-  cargoHash = "sha256-qeFIEH+CtZi/gJApR/s0RyYNI5xODz7YPIeORSZAIIc=";
+  cargoHash = "sha256-kwUTSo9bZOYyovGrswXVfbHFSMSQdtYwvQCz6mU+imI=";
 
   # zainod is the server. The workspace's other members are libraries plus a
   # benchmark harness and two live-test suites that upstream deliberately keeps
