@@ -43,7 +43,7 @@ jobs:
       SYS: ${{ matrix.target.system }}
       FLAKE: github:cypherpunktech/zcash.nix
     steps:
-      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
       # The flake's own nixConfig must be enough, because that is all a user
       # gets; the runner's user is trusted, so --accept-flake-config takes.
       # smokeArgs are the package's own proof and carry no spaces.
@@ -67,7 +67,7 @@ jobs:
       IMG: ${{ matrix.image }}
       FLAKE: github:cypherpunktech/zcash.nix
     steps:
-      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
       # The image runs, and the manifest the tag resolves to was built from
       # main's tip: the tag is the version and is re-pushed on every push, so
       # the revision label is what distinguishes today's from last week's. A
@@ -86,7 +86,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
       # The lock is the tree's; a consumer overrides it. This is the run that
       # notices nixpkgs-unstable moving under the modules and the checks.
       - run: |
