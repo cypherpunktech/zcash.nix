@@ -181,6 +181,12 @@ in
             RuntimeDirectoryMode = "0700";
             ExecStart =
               let
+                # Bracketed where the host is a bare IPv6 address, which is
+                # the one form a URL cannot take unquoted.
+                rpcUrl = "http://${
+                  if lib.hasInfix ":" cfg.rpcHost then "[${cfg.rpcHost}]" else cfg.rpcHost
+                }:${toString cfg.rpcPort}/";
+
                 # The paths systemd provides are shell variables inside a
                 # script (specifiers like %d expand only on the ExecStart
                 # line), so they are appended unescaped, after the arguments
@@ -222,6 +228,50 @@ in
                     echo "rpcbind=${cfg.rpcHost}"
                     echo "rpcport=${toString cfg.rpcPort}"
                   } > "$RUNTIME_DIRECTORY/zcash.conf"
+
+                  # A node that has bound RPC does not yet have a chain. Zebra
+                  # answers getblockchaininfo with "-1: No blocks in state"
+                  # until it commits genesis, both daemons treat that as fatal,
+                  # and systemd restarts them into a node that is ready by
+                  # then. The service therefore works and the unit records a
+                  # crash it never explains -- which is how it read on
+                  # 2026-09-22, when a nixpkgs bump moved boot timing far
+                  # enough to lose a race that had been won every time before.
+                  # Ordering After= the node is not enough: its start job
+                  # completes when RPC answers, and that is a weaker claim than
+                  # this daemon needs. So wait here for the answer it needs.
+                  #
+                  # The wait has a deadline and says so when it expires. This
+                  # unit is Type=simple, so systemd called it started the
+                  # moment it forked and TimeoutStartSec no longer applies: an
+                  # unbounded loop would leave a unit that is active, silent
+                  # and serving nothing, which is worse than the crash it
+                  # replaces. The credentials are for a zcashd-shaped backend;
+                  # zebra has none to check, and ignores them.
+                  #
+                  # The content type is not decoration: zebra's RPC is a
+                  # jsonrpsee server, which answers 415 to anything that does
+                  # not claim JSON, and curl's default is a form encoding. The
+                  # first version of this wait left it off and hung for the
+                  # full fifteen minutes against a node that was ready.
+                  user=$(sed -n 's/^rpcuser=//p' "$RUNTIME_DIRECTORY/zcash.conf")
+                  password=$(sed -n 's/^rpcpassword=//p' "$RUNTIME_DIRECTORY/zcash.conf")
+                  ready=false
+                  SECONDS=0
+                  while [ "$SECONDS" -lt 900 ]; do
+                    if ${lib.getExe pkgs.curl} -sf --max-time 5 --user "$user:$password" \
+                      --header 'content-type: application/json' \
+                      --data '{"jsonrpc":"1.0","id":"start","method":"getblockchaininfo","params":[]}' \
+                      ${lib.escapeShellArg rpcUrl} | grep -q '"blocks"'; then
+                      ready=true
+                      break
+                    fi
+                    sleep 1
+                  done
+                  if [ "$ready" != true ]; then
+                    echo "no chain from the node at ${rpcUrl} after 15 minutes; refusing to start against it" >&2
+                    exit 1
+                  fi
                 ''}
                 ${if logFileFlag == null then "exec ${argv}" else "${argv} | cat"}
               '';
