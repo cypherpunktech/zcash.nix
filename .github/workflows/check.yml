@@ -118,6 +118,35 @@ jobs:
         if: steps.claim.outputs.claimed == 'true'
         run: nix build -L ".#checks.$SYS.\"smoke-$PKG\""
 
+      # Cachix deletes the oldest paths once the cache is over its storage
+      # limit, and main's outputs are the oldest thing in it: each is uploaded
+      # once and then only ever hit, so every later push ages it further up the
+      # list. They were collected on 2026-09-23, six minutes of uploads after
+      # the run that made them, and published.yml -- which fetches the flake as
+      # a stranger does, `--max-jobs 0`, so a miss is a red job rather than a
+      # build -- went red for every package on every system while check.yml
+      # stayed green on the same commit. The gates disagreed because they ask
+      # different questions: one owns a checkout, the other owns nothing.
+      #
+      # A pin is immune from that collection, closure included, and a pin name
+      # reused replaces its predecessor. One per package and system therefore
+      # holds exactly what a consumer of main fetches, and no more: last week's
+      # main ages out the moment this week's takes its name. The push is
+      # explicit because the action's own push runs after every step here, and
+      # a path cannot be pinned before the cache has it.
+      - name: Pin it, so the cache cannot evict what a user of main fetches
+        if: >-
+          steps.claim.outputs.claimed == 'true'
+          && github.event_name == 'push'
+          && github.ref == 'refs/heads/main'
+          && needs.discover.outputs.pushable == 'true'
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          out=$(nix eval --raw ".#packages.$SYS.\"$PKG\"")
+          cachix push cypherpunktech "$out"
+          cachix pin cypherpunktech "main-$PKG-$SYS" "$out"
+
   # NixOS VM tests: boot a machine, start the service, assert it runs and that
   # the hardening is really applied. This is the only gate that covers the unit
   # rather than the binary — a module with an unwritable state directory or a
