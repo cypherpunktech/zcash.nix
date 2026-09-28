@@ -225,7 +225,8 @@ it. The rules that came out of finding the causes:
 
 ## The updater must not fail closed
 
-`.github/workflows/update.yml` opens version-bump PRs and never auto-merges. On
+`.github/workflows/update.yml` opens version-bump PRs and queues auto-merge, so
+the ruleset lands them only once `ci` is green, as the repository's app. On
 failure it leaves the job red and the branch alone — it does not tidy up after
 itself.
 
