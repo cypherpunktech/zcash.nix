@@ -19,7 +19,7 @@
   protobuf,
 }:
 let
-  version = "0.1.1";
+  version = "0.2.0";
 in
 rustPlatform.buildRustPackage {
   pname = "lightwalletd-rs";
@@ -29,10 +29,10 @@ rustPlatform.buildRustPackage {
     owner = "jpgonzalezra";
     repo = "lightwalletd-rs";
     tag = "v${version}";
-    hash = "sha256-bF4elAXr4OUizlGiIEKkRa4Gatko3TirxViwtDGqwm8=";
+    hash = "sha256-kMbAPDc4e9Y3GZcHPghH47IpnI3dCMkVNVUIXkoGJn8=";
   };
 
-  cargoHash = "sha256-HI01uBfZffRDyNJuSim5leYq+UdR+bylqGfhJhWAffU=";
+  cargoHash = "sha256-PootrDwZb/xoeVRin767jn2+Dl2uh83O7mMwRlECHQw=";
 
   # Integration tests drive a darkside node; not a sandbox thing.
   doCheck = false;
