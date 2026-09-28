@@ -16,7 +16,7 @@
 # patch/minor filter would encode a distinction these inputs do not have.
 #
 # pull_request_target runs this file FROM MAIN, which is the only reason it may
-# hold write permissions near a fork's branch. It must never check out
+# hold the app's key near a fork's branch. It must never check out
 # head_ref: that combination hands the PR's own code the token below.
 name: automerge
 
@@ -34,12 +34,18 @@ jobs:
       && startsWith(github.head_ref, 'dependabot/nix/')
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # Queue the merge; the ruleset holds it until `ci` reports.
-    permissions:
-      contents: write
-      pull-requests: write
     steps:
+      # The app's token, not GITHUB_TOKEN: a merge GITHUB_TOKEN queues lands
+      # without a push event, so check.yml never ran on the merged tip and
+      # nothing it publishes was published (see update.yml).
+      - name: App token
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+      # Queue the merge; the ruleset holds it until `ci` reports.
       - env:
           PR: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
         run: gh pr merge --auto --squash "$PR"
