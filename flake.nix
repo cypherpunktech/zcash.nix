@@ -334,6 +334,8 @@
             stale = {
               file = "check-staleness.sh";
               tools = with pkgs; [
+                # GNU sort -V, whose `~` ordering newer() relies on.
+                coreutils
                 gh
                 jq
               ];
