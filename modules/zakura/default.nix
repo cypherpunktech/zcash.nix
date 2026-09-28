@@ -22,4 +22,21 @@ import ../node.nix {
     network.identity_dir = "${stateDir}/identity";
   };
   addressFamilies = [ "AF_NETLINK" ];
+  # P2P v2 is QUIC, so UDP, on its own port. Open unless the stack is pinned
+  # to legacy: an unset p2p_stack follows a per-network default that upstream
+  # says will change between releases (mainnet: legacy until v2 is proven),
+  # and a port with nothing bound to it costs nothing.
+  udpPeerAddrs =
+    settings:
+    if (settings.network.p2p_stack or "default") == "legacy" then
+      [ ]
+    else
+      [ (settings.network.zakura.listen_addr or "0.0.0.0:8234") ];
+  snapshotManifests = {
+    mainnet = {
+      pruned = "https://zakura.valargroup.dev/mainnet-pruned/snapshots.json";
+      archive = "https://zakura.valargroup.dev/mainnet/snapshots.json";
+    };
+    testnet.pruned = "https://zakura.valargroup.dev/testnet-pruned/snapshots.json";
+  };
 }

@@ -1172,7 +1172,7 @@ list of string
 
 Open the peer-to-peer port in the firewall\.
 
-Deliberately covers only the P2P listener\. The RPC port is never
+Deliberately covers only the P2P listeners\. The RPC port is never
 opened: it is an administrative interface, and a node exposing it
 to the internet is a node somebody else is driving\.
 
@@ -1233,6 +1233,69 @@ TOML value
 
 
 
+## services\.zcash\.zakura\.\<name>\.snapshot\.enable
+
+
+
+Whether to enable restoring a published chain-state snapshot when the state directory
+has none, instead of syncing from genesis\. A node restored this way
+trusts the publisher for the history the snapshot contains; one
+synced from the network validates it\. The archive is downloaded
+beside the state before it is unpacked, so the disk needs room for
+both once\.
+
+
+
+*Type:*
+boolean
+
+
+
+*Default:*
+
+```nix
+false
+```
+
+
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+ - [modules/zakura/default\.nix](https://github.com/cypherpunktech/zcash.nix/blob/main/modules/zakura/default.nix)
+
+
+
+## services\.zcash\.zakura\.\<name>\.snapshot\.manifest
+
+
+
+URL of the snapshot manifest: a JSON array of entries with
+` url `, ` filename `, ` sha256 `, ` size_bytes `, ` height `,
+` zakura_version ` and ` roles `\. The entry written by this
+instance’s own version is preferred, since a database of another
+major format is rejected and resynced from genesis; failing
+that, the one marked ` latest `\.
+
+
+
+*Type:*
+null or string
+
+
+
+*Default:*
+the publisher’s manifest for ` settings.network.network ` and ` settings.state.storage_mode `
+
+*Declared by:*
+ - [modules/zakura/default\.nix](https://github.com/cypherpunktech/zcash.nix/blob/main/modules/zakura/default.nix)
+
+
+
 ## services\.zcash\.zakura\.\<name>\.user
 
 
@@ -1253,6 +1316,68 @@ null or string
 
 ```nix
 null
+```
+
+*Declared by:*
+ - [modules/zakura/default\.nix](https://github.com/cypherpunktech/zcash.nix/blob/main/modules/zakura/default.nix)
+
+
+
+## services\.zcash\.zakura\.\<name>\.watchdog\.enable
+
+
+
+Whether to enable restarting the node once it has stopped following the chain\.
+Systemd’s own restart covers a process that dies; this covers one
+that is alive and stuck\. It polls the ` /ready ` health endpoint, so
+` settings.health.listen_addr ` must be set, and acts only after the
+node has been ready once since it started: a node syncing from
+genesis is not ready for days, and restarting it would only make
+that longer\.
+
+
+
+*Type:*
+boolean
+
+
+
+*Default:*
+
+```nix
+false
+```
+
+
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+ - [modules/zakura/default\.nix](https://github.com/cypherpunktech/zcash.nix/blob/main/modules/zakura/default.nix)
+
+
+
+## services\.zcash\.zakura\.\<name>\.watchdog\.stallAfter
+
+
+
+Seconds ` /ready ` must keep failing before the node is restarted\.
+
+
+
+*Type:*
+positive integer, meaning >0
+
+
+
+*Default:*
+
+```nix
+1800
 ```
 
 *Declared by:*
@@ -1546,7 +1671,7 @@ list of string
 
 Open the peer-to-peer port in the firewall\.
 
-Deliberately covers only the P2P listener\. The RPC port is never
+Deliberately covers only the P2P listeners\. The RPC port is never
 opened: it is an administrative interface, and a node exposing it
 to the internet is a node somebody else is driving\.
 
@@ -1627,6 +1752,68 @@ null or string
 
 ```nix
 null
+```
+
+*Declared by:*
+ - [modules/zebra/default\.nix](https://github.com/cypherpunktech/zcash.nix/blob/main/modules/zebra/default.nix)
+
+
+
+## services\.zcash\.zebra\.\<name>\.watchdog\.enable
+
+
+
+Whether to enable restarting the node once it has stopped following the chain\.
+Systemd’s own restart covers a process that dies; this covers one
+that is alive and stuck\. It polls the ` /ready ` health endpoint, so
+` settings.health.listen_addr ` must be set, and acts only after the
+node has been ready once since it started: a node syncing from
+genesis is not ready for days, and restarting it would only make
+that longer\.
+
+
+
+*Type:*
+boolean
+
+
+
+*Default:*
+
+```nix
+false
+```
+
+
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+ - [modules/zebra/default\.nix](https://github.com/cypherpunktech/zcash.nix/blob/main/modules/zebra/default.nix)
+
+
+
+## services\.zcash\.zebra\.\<name>\.watchdog\.stallAfter
+
+
+
+Seconds ` /ready ` must keep failing before the node is restarted\.
+
+
+
+*Type:*
+positive integer, meaning >0
+
+
+
+*Default:*
+
+```nix
+1800
 ```
 
 *Declared by:*
