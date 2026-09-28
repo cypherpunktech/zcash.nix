@@ -18,21 +18,21 @@
   protobuf,
 }:
 let
-  version = "0.10.0";
+  version = "0.10.1";
 
   src = fetchFromGitHub {
     owner = "zingolabs";
     repo = "zaino";
     # Upstream tags releases without a `v` prefix.
     tag = version;
-    hash = "sha256-OXFT4Uk0I4C26rHBbu/yrR5EkdzcT5UWW546AwxcKFI=";
+    hash = "sha256-O9VpZhwS0FsxCeN4XRgwRXxuAXUMFD/AEQeSSx6U/9Y=";
   };
 in
 rustPlatform.buildRustPackage {
   pname = "zaino";
   inherit version src;
 
-  cargoHash = "sha256-oqrsdNJtFfoBgD/lv/wlfk0RVItf8dyH4lxISKpyO0o=";
+  cargoHash = "sha256-/v5C4W7NgQBBrXFXjs0usdOyfQUJF7WihuRrEYZM/EQ=";
 
   # zainod is the server. The workspace's other members are libraries plus a
   # benchmark harness and two live-test suites that upstream deliberately keeps
