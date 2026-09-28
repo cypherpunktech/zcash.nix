@@ -13,7 +13,7 @@
   protobuf,
 }:
 let
-  version = "6.3.0";
+  version = "6.4.2";
 in
 rustPlatform.buildRustPackage {
   pname = "zebra";
@@ -26,14 +26,14 @@ rustPlatform.buildRustPackage {
     # field's job is to say which release this is. A moved tag changes the hash
     # and fails the build loudly rather than silently building something else.
     tag = "v${version}";
-    hash = "sha256-EBsibjSdKLaYB/Tr8q6jzr6QJiix8cG1HD2QeuBJG1k=";
+    hash = "sha256-KtvGrXHLRhJnjnaxQvIoS4evB3EOKauChcbnYPACdAM=";
   };
 
   # cargoHash (fetchCargoVendor), not cargoLock.lockFile: the lockfiles across
   # this repo's packages carry git dependencies, which fetchCargoVendor resolves
   # on its own where cargoLock would demand a hand-maintained outputHashes map.
   # One mechanism for all six packages.
-  cargoHash = "sha256-74fx7YjxAUaL0sFBJcVVt0pMEf1iuvK1IG9Rg78gH38=";
+  cargoHash = "sha256-S4/nSnv28L/7QH9gWHJLfUUZSQ+uORhx1w764uArQB0=";
 
   # The workspace also builds zebra-utils' developer tools. They are
   # feature-gated, useful to Zebra maintainers rather than node operators, and
