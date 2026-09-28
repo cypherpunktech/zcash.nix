@@ -14,7 +14,9 @@ name: update
 
 on:
   schedule:
-    - cron: "37 4 * * 1"
+    # Daily, not weekly: zakura ships several releases in a busy week, and a
+    # fleet following this flake can be no fresher than its last run.
+    - cron: "37 4 * * *"
   workflow_dispatch:
 
 permissions:
