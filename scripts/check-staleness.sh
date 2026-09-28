@@ -11,8 +11,10 @@
 # Two claims, because there are two kinds of pin in this repo:
 #
 #   tag-pinned  — the package tracks upstream releases. Claim: we are on the
-#                 newest release, or that release is younger than TAG_GRACE_DAYS
-#                 (a bump we have simply not got to yet).
+#                 newest release or past it, or it is younger than TAG_GRACE_DAYS
+#                 (a bump we have simply not got to yet). Past it is real: the
+#                 updater follows tags, and zaino tagged 0.10.1 without ever
+#                 publishing it as a release, which read as 16 days behind.
 #   rev-pinned  — upstream cuts no releases, so we pin a commit deliberately.
 #                 Claim: that commit is younger than REV_GRACE_DAYS, or it is
 #                 still the default branch head.
@@ -37,6 +39,16 @@ days_since() {
 	echo $(((now - $(epoch_of "$1")) / 86400))
 }
 
+# Whether version $1 is newer than $2. sort -V alone ranks 0.1.0-beta.3 above
+# 0.1.0, as does nix's compareVersions; a pre-release suffix becomes `~`, which
+# sort -V puts before everything, as semver puts it before the release.
+newer() {
+	local a b
+	a=$(sed -E 's/^v//; s/^([0-9.]+)-/\1~/' <<<"$1")
+	b=$(sed -E 's/^v//; s/^([0-9.]+)-/\1~/' <<<"$2")
+	[ "$a" != "$b" ] && [ "$(printf '%s\n' "$a" "$b" | sort -V | tail -1)" = "$a" ]
+}
+
 eval_attr() {
 	nix eval --raw ".#packages.${SYSTEM}.$1.$2"
 }
@@ -56,6 +68,10 @@ for pkg in $packages; do
 		)
 		if [ "$pinned" = "$latest" ]; then
 			echo "ok       $pkg  $pinned (current)"
+			continue
+		fi
+		if newer "$pinned" "$latest"; then
+			echo "ok       $pkg  $pinned (past the latest release, $latest)"
 			continue
 		fi
 		age=$(days_since "$published")
