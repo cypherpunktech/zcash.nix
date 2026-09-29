@@ -77,6 +77,9 @@ _self: _: {
         assert "snapshot" not in leftovers, f"download dir left behind: {leftovers}"
 
     with subtest("answers JSON-RPC"):
+        # With a snapshot to restore the unit is started before RPC is bound:
+        # a restore must not hold the start job (modules/node.nix, rpc-ready).
+        machine.wait_for_open_port(18232)
         out = machine.succeed(
             "curl -s --fail --max-time 10 -H 'Content-Type: application/json' "
             "--data '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getinfo\",\"params\":[]}' "

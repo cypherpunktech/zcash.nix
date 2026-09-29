@@ -56,7 +56,7 @@ let
   nodeName = name;
   hardening = import ./hardening.nix;
 
-  # Runs as the node's ExecStartPre, so as its identity, inside its sandbox:
+  # Runs in the node's own unit, so as its identity, inside its sandbox:
   # the archive can write nowhere but the state directory. Every step is
   # restartable. The download resumes, a checksum mismatch deletes it, and the
   # unpack goes to a scratch directory that becomes `state` in one rename, so
@@ -314,23 +314,20 @@ in
             # sized for a state-format migration on mainnet; on a host with no
             # DNS zebrad never binds RPC (tests/zebra.nix) and the unit sits in
             # "activating (start-post)" until then, which is the truthful state.
+            #
+            # Except during a snapshot restore: hundreds of GB for an archive
+            # node, hours of download, and a start job held that long holds
+            # nixos-rebuild and every upgrade behind it. With no state on disk
+            # yet the unit counts as started once the restore is under way, and
+            # whatever follows it waits on RPC the way it would for a restart.
             // lib.optionalAttrs (cfg.settings.rpc ? listen_addr) {
               ExecStartPost = pkgs.writeShellScript "${name}-${instanceName}-rpc-ready" ''
-                until (exec 3<>/dev/tcp/${service.hostOf cfg.settings.rpc.listen_addr}/${toString (service.portOf cfg.settings.rpc.listen_addr)}) 2>/dev/null; do sleep 1; done
+                until (exec 3<>/dev/tcp/${service.hostOf cfg.settings.rpc.listen_addr}/${toString (service.portOf cfg.settings.rpc.listen_addr)}) 2>/dev/null${
+                  lib.optionalString (cfg.snapshot.enable or false
+                  ) " || ! test -e ${cfg.settings.state.cache_dir}/state"
+                }; do sleep 1; done
               '';
               TimeoutStartSec = "15min";
-            }
-            # After the RPC block on purpose: a restore is hundreds of GB for an
-            # archive node, so its start has no bound but the download. A failed
-            # one retries under the unit's own Restart, resuming.
-            // lib.optionalAttrs (cfg.snapshot.enable or false) {
-              ExecStartPre = lib.escapeShellArgs [
-                (lib.getExe restoreSnapshot)
-                cfg.snapshot.manifest
-                cfg.package.version
-                cfg.settings.state.cache_dir
-              ];
-              TimeoutStartSec = "infinity";
             }
             # Zebra's internal miner lowers its solver thread's priority (the
             # thread-priority crate: pthread_setschedparam, then setpriority for
@@ -345,15 +342,34 @@ in
               ];
             }
             // {
-              ExecStart = lib.escapeShellArgs (
-                [
-                  (lib.getExe cfg.package)
-                  "--config"
-                  (toml.generate "${name}-${instanceName}.toml" cfg.settings)
-                  "start"
-                ]
-                ++ cfg.extraArgs
-              );
+              ExecStart =
+                let
+                  node = lib.escapeShellArgs (
+                    [
+                      (lib.getExe cfg.package)
+                      "--config"
+                      (toml.generate "${name}-${instanceName}.toml" cfg.settings)
+                      "start"
+                    ]
+                    ++ cfg.extraArgs
+                  );
+                in
+                # The restore runs in the main process, not ExecStartPre, so
+                # that it is not part of the start job (see rpc-ready above). A
+                # failed one exits, and Restart retries it, resuming.
+                if cfg.snapshot.enable or false then
+                  pkgs.writeShellScript "${name}-${instanceName}-start" ''
+                    ${
+                      lib.escapeShellArgs [
+                        (lib.getExe restoreSnapshot)
+                        cfg.snapshot.manifest
+                        cfg.package.version
+                        cfg.settings.state.cache_dir
+                      ]
+                    } && exec ${node}
+                  ''
+                else
+                  node;
               # Past this the kernel kills the node rather than the host: sshd
               # and the watchdog keep their tenth, and Restart brings it back.
               MemoryMax = lib.mkDefault "90%";
