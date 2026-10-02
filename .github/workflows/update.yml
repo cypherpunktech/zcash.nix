@@ -78,26 +78,33 @@ jobs:
           if [ "$tag" = "$rev" ]; then
             # Not a tag at all: a bare commit, because upstream cuts no releases.
             target=branch
-          elif [[ "$tag" =~ [0-9][-+][0-9A-Za-z.-]+$ ]]; then
-            # A semver pre-release or build suffix after the version core, e.g.
-            # v0.1.0-beta.3. GitHub does not flag these as prereleases and
-            # check-staleness.sh therefore treats them as current, but
-            # nix-update applies semver rules and refuses them under `stable`
-            # with "Found an unstable version ... please use '--version=unstable'".
-            # Two tools, two definitions of stable; this is where they are
-            # reconciled. The [0-9] before the separator is load-bearing: it
-            # keeps a name like zebra-utils-v10.0.1 out of this branch.
-            target=unstable
           else
-            target=stable
+            # The target is found here, not by nix-update: it reads only the
+            # newest few tags from GitHub's feed, and zebra's v7.0.0-rc.0 came
+            # with a burst of per-crate tags (zebra-rpc-v18.0.0, ...) that
+            # pushed every release out of it (update #15). ls-remote sees all.
+            #
+            # A semver pre-release suffix (rc, beta) is never taken over a
+            # stable pin; a pre-release pin (zallet, which has cut nothing
+            # else) follows pre-releases. check-staleness.sh applies the same
+            # rule with the same expression. The [0-9] before the dash keeps a
+            # name like zebra-utils-v10.0.1 out.
+            pre='[0-9]-[0-9A-Za-z.-]+$'
+            [[ $tag =~ $pre ]] && drop='^$' || drop=$pre
+            # A tagged pin is `v?<version>` in every package here, so only a tag
+            # of that shape is a candidate. Without this zaino's
+            # `backup/pre-nfs-greenfield-20260920` was taken for a release (#8).
+            # The suffix becomes `~`, which sort -V ranks before everything, as
+            # semver ranks 0.1.0-beta.3 before 0.1.0.
+            target=$(git ls-remote --tags --refs "$(nix eval --raw ".#\"$PKG\".src.gitRepoUrl")" |
+              sed 's#.*refs/tags/##' |
+              grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' |
+              grep -vE "$drop" |
+              sed -E 's/^v//; s/^([0-9.]+)-/\1~/' | sort -V | tail -1 | tr '~' -)
+            [ -n "$target" ] || { echo "::error::no release tag of $PKG matched"; exit 1; }
           fi
-          # A tagged pin is `v?<version>` in every package here, so only a tag of
-          # that shape is a candidate. Without this nix-update took zaino's
-          # `backup/pre-nfs-greenfield-20260920` for a release (#8).
-          regex=()
-          [ "$target" = branch ] || regex=(--version-regex '^v?([0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)$')
           echo "bumping $PKG (tag: $tag) toward: $target"
-          nix develop --command nix-update --flake --version="$target" "${regex[@]}" "$PKG"
+          nix develop --command nix-update --flake --version="$target" "$PKG"
 
       - name: Did anything change?
         id: changed

@@ -49,6 +49,13 @@ newer() {
 	[ "$a" != "$b" ] && [ "$(printf '%s\n' "$a" "$b" | sort -V | tail -1)" = "$a" ]
 }
 
+# A semver pre-release suffix after the version core. The [0-9] before it keeps
+# a name like zebra-utils-v10.0.1 out. update.yml uses the same expression.
+PRE='[0-9]-[0-9A-Za-z.-]+$'
+is_pre() {
+	[[ $1 =~ $PRE ]]
+}
+
 eval_attr() {
 	nix eval --raw ".#packages.${SYSTEM}.$1.$2"
 }
@@ -63,8 +70,16 @@ for pkg in $packages; do
 	case "$rev" in
 	refs/tags/*)
 		pinned="${rev#refs/tags/}"
+		# The newest release we would ship: never a pre-release (rc, beta) over
+		# a stable pin, whatever GitHub says. Zebra marked v7.0.0-rc.0 as its
+		# latest release, unflagged, and this demanded it. A pre-release pin
+		# (zallet, which has cut nothing else) still follows pre-releases.
 		read -r latest published < <(
-			gh api "repos/${repo}/releases/latest" --jq '"\(.tag_name) \(.published_at)"'
+			gh api "repos/${repo}/releases?per_page=100" --jq "
+				[.[] | select(.draft or .prerelease | not)
+				     | select($(is_pre "$pinned" && echo true || echo false)
+				              or (.tag_name | test(\"$PRE\") | not))][0]
+				| \"\(.tag_name) \(.published_at)\""
 		)
 		if [ "$pinned" = "$latest" ]; then
 			echo "ok       $pkg  $pinned (current)"
