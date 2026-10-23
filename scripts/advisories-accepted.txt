@@ -32,14 +32,29 @@ RUSTSEC-2026-0195    2026-12-07  quick-xml 0.39.2 unbounded namespace allocation
 RUSTSEC-2026-0204    2026-12-07  crossbeam-epoch 0.9.18 invalid pointer deref in a Debug impl; zaino's Cargo.lock
 RUSTSEC-2026-0258    2026-12-07  h2 unbounded empty DATA frames; six upstreams' lockfiles, every one of them
 #
-# Reviewed 2026-09-22. The grpc three are already fixed in lightwalletd's
-# master (they took grpc 1.83.2 on 2026-09-08, past the 1.83.1 that patches
-# all three); v0.5.4 is the newest release and predates it, so the wait is
-# for their next tag, not for a fix to exist. Of the three, only GO-2026-6348
-# is reachable in what this repository runs: the other two are xDS routing,
-# which lightwalletd does not configure, and govulncheck flags them on symbol
-# reachability alone.
-GO-2026-6348         2026-12-22  grpc HTTP/2 DATA-frame OOM; fixed in lightwalletd master, unreleased
-GO-2026-6441         2026-12-22  grpc xDS RBAC header matching; xDS unused by lightwalletd
-GO-2026-6443         2026-12-22  grpc xDS missing-authority panic; xDS unused by lightwalletd
+# Reviewed 2026-09-22.
 RUSTSEC-2026-0285    2026-12-22  rustls < 0.23.45 accepts TLS 1.3 handshake across key changes; every upstream's lockfile
+#
+# Reviewed 2026-10-23, after lightwalletd 0.6.0 (which closed the grpc three)
+# and Go 1.26.10 (which closed eight stdlib ones). What is left is upstream's:
+# the Go five are the HTTP/2 code in lightwalletd's x/net; the Rust ones are
+# quinn-proto, rustls, and the emSign roots distrusted after the October CA
+# compromise, in nearly every upstream's lockfile.
+GO-2026-6603         2027-01-21  HTTP/2 server Trailer memory exhaustion; lightwalletd's go.mod
+GO-2026-6610         2027-01-21  HTTP/2 transport accepts malformed framing headers; lightwalletd's go.mod
+GO-2026-6611         2027-01-21  HTTP/2 repeated initial-window-change CPU burn; lightwalletd's go.mod
+GO-2026-6612         2027-01-21  HTTP/2 server double flow-control refund; lightwalletd's go.mod
+GO-2026-6617         2027-01-21  HTTP/2 server HPACK encoder race crash; lightwalletd's go.mod
+RUSTSEC-2026-0338    2027-01-21  quinn-proto 0.11.16 panic on zero-length STREAM frames; every upstream's lockfile
+RUSTSEC-2026-0339    2027-01-21  quinn-proto 0.11.16 unbounded CID retirements; seven upstreams' lockfiles
+RUSTSEC-2026-0340    2027-01-21  quinn-proto 0.11.16 min-ACK-delay panic; every upstream's lockfile
+RUSTSEC-2026-0341    2027-01-21  quinn-proto 0.11.16 reassembly memory guard bypass; seven upstreams' lockfiles
+RUSTSEC-2026-0342    2027-01-21  quinn-proto 0.11.16 zero-length DATAGRAM buffer bypass; seven upstreams' lockfiles
+RUSTSEC-2026-0343    2027-01-21  quinn-proto 0.11.17 datagram accounting panic; ztreamer's Cargo.lock
+RUSTSEC-2026-0346    2027-01-21  rustls 0.23.45 Debug impls expose TLS secrets; seven upstreams' lockfiles
+RUSTSEC-2026-0347    2027-01-21  rustls 0.23.45 data to outer server after ECH rejection; lightwalletd-rs and zaino
+RUSTSEC-2026-0348    2027-01-21  rustls 0.23.45 brotli cert decompression 1 GiB pre-auth; seven upstreams' lockfiles
+RUSTSEC-2026-0349    2027-01-21  rustls 0.23.45 ServerHello downgrades later key exchange; seven upstreams' lockfiles
+RUSTSEC-2026-0381    2027-01-21  webpki-roots 1.0.8 trusts distrusted emSign intermediates; six upstreams' lockfiles
+RUSTSEC-2026-0382    2027-01-21  rustls-webpki 0.103.15 accepts distrusted intermediates; seven upstreams' lockfiles
+RUSTSEC-2026-0383    2027-01-21  webpki-root-certs 1.0.8 trusts distrusted emSign intermediates; seven upstreams' lockfiles

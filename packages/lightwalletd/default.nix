@@ -1,9 +1,9 @@
 # lightwalletd — the light-client backend service for Zcash.
 #
-# WHY THIS EXISTS, given nixpkgs already has one: nixpkgs ships 0.4.19, five
-# releases behind upstream's 0.5.4. lightwalletd is the most widely deployed
+# WHY THIS EXISTS, given nixpkgs already has one: nixpkgs ships 0.4.19, several
+# releases behind upstream's 0.6.0. lightwalletd is the most widely deployed
 # service in this ecosystem and the one wallets actually talk to, so running it
-# five releases stale is not a small thing. This is the only package here that
+# several releases stale is not a small thing. This is the only package here that
 # duplicates a nixpkgs attribute, and it does so on currency rather than
 # absence -- if nixpkgs catches up, this package should be reconsidered rather
 # than kept out of habit.
@@ -17,11 +17,29 @@
   lib,
   buildGoModule,
   fetchFromGitHub,
+  fetchurl,
+  go,
 }:
 let
-  version = "0.5.5";
+  version = "0.6.0";
+
+  # 0.6.0's go.mod requires go >= 1.26.10; nixpkgs-unstable has at most 1.26.9 while
+  # 1.26.10 sits in master (NixOS/nixpkgs#576200) behind a world rebuild. The
+  # throw turns this into an eval error the day the pin catches up, so the
+  # override is deleted rather than kept as an unexamined second Go.
+  go' =
+    if lib.versionAtLeast go.version "1.26.10" then
+      throw "lightwalletd: nixpkgs now has go ${go.version}; delete the go override"
+    else
+      go.overrideAttrs rec {
+        version = "1.26.10";
+        src = fetchurl {
+          url = "https://go.dev/dl/go${version}.src.tar.gz";
+          hash = "sha256-/WPog7ovK/ypPBZGsx6+9j4rHk0rMXyXidl2po2B828=";
+        };
+      };
 in
-buildGoModule {
+(buildGoModule.override { go = go'; }) {
   pname = "lightwalletd";
   inherit version;
 
@@ -29,7 +47,7 @@ buildGoModule {
     owner = "zcash";
     repo = "lightwalletd";
     tag = "v${version}";
-    hash = "sha256-oEfilypspzPLo3Cr5lC2tXxt34Mmmr9NyHNar2292Zs=";
+    hash = "sha256-Qi5tjG2aw5NBBFKav5SY3Opj0XBEbPmzy6vmKke81jE=";
   };
 
   vendorHash = "sha256-LyWbitsjw6YXxGnxd53SCkD6AL5p8YY6hLQJxgVIIRw=";
