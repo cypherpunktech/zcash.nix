@@ -26,7 +26,7 @@
   protobuf,
 }:
 let
-  version = "0.1.0-unstable-2026-10-22";
+  version = "0.1.0-unstable-2026-10-23";
 in
 rustPlatform.buildRustPackage {
   pname = "ztreamer";
@@ -35,11 +35,11 @@ rustPlatform.buildRustPackage {
   src = fetchFromGitHub {
     owner = "distractedm1nd";
     repo = "ztreamer";
-    rev = "73875890ce713f5f0e352e87cefdaeb00669dfd7";
-    hash = "sha256-TaNbhrBcT5+lxP1glNNA3oC7WGY2JDBtPhazn0mvftY=";
+    rev = "168ea3b48a9d05e5503e2f7363a2a0559a750bae";
+    hash = "sha256-Yz7mp33ErkwNJ2SYTOi60RO3BkZJDSlfUa7C23Ky1rM=";
   };
 
-  cargoHash = "sha256-1W0XdDL4VRFYaxL8KnHtaFnXWlmQdKUhKx8zePelAEQ=";
+  cargoHash = "sha256-gQCeQAiuXVx6/X8w2AUrcaX3CcOtbYOpLBDAZjrxymk=";
 
   cargoBuildFlags = [
     "-p"
