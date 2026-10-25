@@ -69,7 +69,10 @@ _self: _: {
     machine.wait_for_unit("zakura-regtest.service")
 
     with subtest("restores the snapshot this version wrote, not the decoy"):
-        marker = machine.succeed("cat /var/lib/zakura-regtest/state/marker").strip()
+        # The unit is active before the restore ends (it runs in the main
+        # process, outside the start job), and state appears in one rename.
+        machine.wait_for_file("/var/lib/zakura-regtest/state/marker", timeout=120)
+        marker =machine.succeed("cat /var/lib/zakura-regtest/state/marker").strip()
         assert marker == "restored", f"state/marker is {marker!r}"
         journal = machine.succeed("journalctl -b -u zakura-regtest.service --no-pager")
         assert "restoring good.tar.zst" in journal, f"no restore of good.tar.zst in:\n{journal}"
