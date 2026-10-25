@@ -15,9 +15,6 @@
 #
 # id                 expires     why
 GO-2026-5932         2026-12-07  x/crypto/openpgp unmaintained; lightwalletd's go.mod, upstream's release
-GO-2026-5942         2026-12-07  x/net dnsmessage panic on invalid SVCB/HTTPS RR; lightwalletd's go.mod
-GO-2026-5970         2026-12-07  x/text infinite loop on invalid input; lightwalletd's go.mod
-GO-2026-6303         2026-12-07  x/crypto/ssh source-address option unenforced; lightwalletd's go.mod
 GO-2026-6354         2026-12-07  x/crypto/ssh deadlocked-channel DoS; lightwalletd's go.mod
 GO-2026-6355         2026-12-07  x/crypto/ssh deadlocked-channel DoS; lightwalletd's go.mod
 RUSTSEC-2026-0009    2026-12-07  time 0.3.37 stack exhaustion; zpay's Cargo.lock
@@ -25,10 +22,6 @@ RUSTSEC-2026-0049    2026-12-07  rustls-webpki 0.102.8 CRL authority matching; z
 RUSTSEC-2026-0098    2026-12-07  rustls-webpki 0.102.8 URI name constraints; zpay's Cargo.lock
 RUSTSEC-2026-0099    2026-12-07  rustls-webpki 0.102.8 wildcard name constraints; zpay's Cargo.lock
 RUSTSEC-2026-0104    2026-12-07  rustls-webpki 0.102.8 panic parsing a CRL; zpay's Cargo.lock
-RUSTSEC-2026-0118    2026-12-07  hickory-proto 0.25.2 NSEC3 unbounded loop; zakura and ztreamer's lockfiles
-RUSTSEC-2026-0119    2026-12-07  hickory-proto 0.25.2 O(n^2) name compression; zakura and ztreamer's lockfiles
-RUSTSEC-2026-0194    2026-12-07  quick-xml 0.39.2 quadratic duplicate-attribute check; zebra's Cargo.lock
-RUSTSEC-2026-0195    2026-12-07  quick-xml 0.39.2 unbounded namespace allocation; zebra's Cargo.lock
 RUSTSEC-2026-0204    2026-12-07  crossbeam-epoch 0.9.18 invalid pointer deref in a Debug impl; zaino's Cargo.lock
 RUSTSEC-2026-0258    2026-12-07  h2 unbounded empty DATA frames; six upstreams' lockfiles, every one of them
 #
@@ -50,7 +43,6 @@ RUSTSEC-2026-0339    2027-01-21  quinn-proto 0.11.16 unbounded CID retirements; 
 RUSTSEC-2026-0340    2027-01-21  quinn-proto 0.11.16 min-ACK-delay panic; every upstream's lockfile
 RUSTSEC-2026-0341    2027-01-21  quinn-proto 0.11.16 reassembly memory guard bypass; seven upstreams' lockfiles
 RUSTSEC-2026-0342    2027-01-21  quinn-proto 0.11.16 zero-length DATAGRAM buffer bypass; seven upstreams' lockfiles
-RUSTSEC-2026-0343    2027-01-21  quinn-proto 0.11.17 datagram accounting panic; ztreamer's Cargo.lock
 RUSTSEC-2026-0346    2027-01-21  rustls 0.23.45 Debug impls expose TLS secrets; seven upstreams' lockfiles
 RUSTSEC-2026-0347    2027-01-21  rustls 0.23.45 data to outer server after ECH rejection; lightwalletd-rs and zaino
 RUSTSEC-2026-0348    2027-01-21  rustls 0.23.45 brotli cert decompression 1 GiB pre-auth; seven upstreams' lockfiles
@@ -58,3 +50,8 @@ RUSTSEC-2026-0349    2027-01-21  rustls 0.23.45 ServerHello downgrades later key
 RUSTSEC-2026-0381    2027-01-21  webpki-roots 1.0.8 trusts distrusted emSign intermediates; six upstreams' lockfiles
 RUSTSEC-2026-0382    2027-01-21  rustls-webpki 0.103.15 accepts distrusted intermediates; seven upstreams' lockfiles
 RUSTSEC-2026-0383    2027-01-21  webpki-root-certs 1.0.8 trusts distrusted emSign intermediates; seven upstreams' lockfiles
+#
+# Reviewed 2026-10-25. Two timing side channels in constant-time helpers,
+# both in upstream lockfiles; the eight entries the scan called fixed are gone.
+RUSTSEC-2026-0385    2027-01-23  ctutils 0.4.2 non-constant-time masks and u128 compares; zakura and zebra
+RUSTSEC-2026-0387    2027-01-23  crypto-bigint 0.5.5 timing variability in constant-time ops; zallet and zpay
