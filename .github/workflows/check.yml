@@ -128,10 +128,14 @@ jobs:
       # stayed green on the same commit. The gates disagreed because they ask
       # different questions: one owns a checkout, the other owns nothing.
       #
-      # A pin is immune from that collection, closure included, and a pin name
-      # reused replaces its predecessor. One per package and system therefore
-      # holds exactly what a consumer of main fetches, and no more: last week's
-      # main ages out the moment this week's takes its name. The push is
+      # A pin is immune from that collection, closure included. A pin name
+      # reused does NOT replace its predecessor: Cachix keeps every revision
+      # forever by default, so each push to main stacked another full set of
+      # closures until the plan's pin storage refused them all (402, on
+      # 2026-10-25, the first nixpkgs bump to change every output at once).
+      # --keep-revisions 1 makes one per package and system hold exactly what
+      # a consumer of main fetches, and no more: last week's main ages out the
+      # moment this week's takes its name. The push is
       # explicit because the action's own push runs after every step here, and
       # a path cannot be pinned before the cache has it.
       - name: Pin it, so the cache cannot evict what a user of main fetches
@@ -145,7 +149,7 @@ jobs:
         run: |
           out=$(nix eval --raw ".#packages.$SYS.\"$PKG\"")
           cachix push cypherpunktech "$out"
-          cachix pin cypherpunktech "main-$PKG-$SYS" "$out"
+          cachix pin cypherpunktech "main-$PKG-$SYS" "$out" --keep-revisions 1
 
   # NixOS VM tests: boot a machine, start the service, assert it runs and that
   # the hardening is really applied. This is the only gate that covers the unit
