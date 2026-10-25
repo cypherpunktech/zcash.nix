@@ -17,29 +17,11 @@
   lib,
   buildGoModule,
   fetchFromGitHub,
-  fetchurl,
-  go,
 }:
 let
   version = "0.6.0";
-
-  # 0.6.0's go.mod requires go >= 1.26.10; nixpkgs-unstable has at most 1.26.9 while
-  # 1.26.10 sits in master (NixOS/nixpkgs#576200) behind a world rebuild. The
-  # throw turns this into an eval error the day the pin catches up, so the
-  # override is deleted rather than kept as an unexamined second Go.
-  go' =
-    if lib.versionAtLeast go.version "1.26.10" then
-      throw "lightwalletd: nixpkgs now has go ${go.version}; delete the go override"
-    else
-      go.overrideAttrs rec {
-        version = "1.26.10";
-        src = fetchurl {
-          url = "https://go.dev/dl/go${version}.src.tar.gz";
-          hash = "sha256-/WPog7ovK/ypPBZGsx6+9j4rHk0rMXyXidl2po2B828=";
-        };
-      };
 in
-(buildGoModule.override { go = go'; }) {
+buildGoModule {
   pname = "lightwalletd";
   inherit version;
 
