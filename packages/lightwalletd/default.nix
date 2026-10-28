@@ -19,7 +19,7 @@
   fetchFromGitHub,
 }:
 let
-  version = "0.6.0";
+  version = "0.6.1";
 in
 buildGoModule {
   pname = "lightwalletd";
@@ -29,7 +29,7 @@ buildGoModule {
     owner = "zcash";
     repo = "lightwalletd";
     tag = "v${version}";
-    hash = "sha256-Qi5tjG2aw5NBBFKav5SY3Opj0XBEbPmzy6vmKke81jE=";
+    hash = "sha256-fnndAXTuQs/2d3jVvctx7sayjIjrnK7elVvQmMFc/Ws=";
   };
 
   vendorHash = "sha256-LyWbitsjw6YXxGnxd53SCkD6AL5p8YY6hLQJxgVIIRw=";
