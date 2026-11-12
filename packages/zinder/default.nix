@@ -12,7 +12,7 @@
   protobuf,
 }:
 let
-  version = "0.6.0";
+  version = "0.9.0";
 in
 rustPlatform.buildRustPackage {
   pname = "zinder";
@@ -22,10 +22,10 @@ rustPlatform.buildRustPackage {
     owner = "ZcashFoundation";
     repo = "zinder";
     tag = "v${version}";
-    hash = "sha256-mWywB29eIjB2ZxKB2/UCiGrFBUJJe8OMV5O1Cj+eLnM=";
+    hash = "sha256-5inZbwVibW9E9MnUoKOvzH0l8DtDRxVmDzsW1nhdwMQ=";
   };
 
-  cargoHash = "sha256-Fc6S08nUMPnGAR75/Jq7NAH8KsehKVDG/H2lpK8gCjg=";
+  cargoHash = "sha256-RqrujwXvmjtBipNfCYVHGTM1J0hX28zfM7+mm1nYuF4=";
 
   # Upstream's documented wallet-serving topology is four independent runtimes on
   # one host: ingest owns canonical storage, projector derives the wallet view,
