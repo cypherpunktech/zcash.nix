@@ -92,7 +92,7 @@ jobs:
             list="$list"',{"runner":"ubuntu-24.04-arm","system":"aarch64-linux"}'
           fi
           if [ "$MACOS" = "true" ]; then
-            list="$list"',{"runner":"macos-14","system":"aarch64-darwin"}'
+            list="$list"',{"runner":"macos-15","system":"aarch64-darwin"}'
           fi
           list="$list]"
           echo "list=$list" >> "$GITHUB_OUTPUT"

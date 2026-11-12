@@ -217,7 +217,7 @@ jobs:
         image: ${{ fromJSON(needs.discover.outputs.images) }}
         target: ${{ fromJSON(needs.discover.outputs.targets) }}
         exclude:
-          - target: { runner: macos-14, system: aarch64-darwin }
+          - target: { runner: macos-15, system: aarch64-darwin }
     env:
       IMG: ${{ matrix.image }}
       SYS: ${{ matrix.target.system }}
