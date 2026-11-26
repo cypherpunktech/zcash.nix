@@ -19,7 +19,7 @@
   fetchFromGitHub,
 }:
 let
-  version = "0.6.2";
+  version = "0.6.3";
 in
 buildGoModule {
   pname = "lightwalletd";
@@ -29,10 +29,10 @@ buildGoModule {
     owner = "zcash";
     repo = "lightwalletd";
     tag = "v${version}";
-    hash = "sha256-ShlhMDmvpdwYE7znm4B6bA1BrRK14DReFMWIs586/c0=";
+    hash = "sha256-NA0n4bKks+4BdUCmm0/wclYYbjwSg/+B5XTHnQbB1Eo=";
   };
 
-  vendorHash = "sha256-KLxNRStB8xRvMHt/VOpLS9rbzIRrOfKF/9/tLcevJjk=";
+  vendorHash = "sha256-nkPT+WK0sUiAtkF0PZDo71yGHLGqOxd4qvo6DZHkIbI=";
 
   # Upstream's Makefile fills these from `git describe --tags` and friends. A
   # derivation has no git and no .git -- the source is a tarball -- so without
